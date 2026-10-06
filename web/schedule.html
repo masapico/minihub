@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>予定調整 · {{.WorkspaceTitle}}</title><meta name="theme-color" content="#334155"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css"><link rel="stylesheet" href="/css/theme.css"><link rel="stylesheet" href="/css/schedule.css"></head>
+<body><header class="schedule-header"><a href="/" class="brand-link"><svg aria-hidden="true"><use href="/vendor/bootstrap-icons/bootstrap-icons.svg#chat-square-text"></use></svg>{{.WorkspaceTitle}}</a><span>予定調整</span><div class="header-actions"><span id="me"></span><a href="/">チャットへ戻る</a></div></header>
+<main class="schedule-shell">
+  <div id="alert" class="alert hidden" role="alert"></div>
+  <section id="listView" class="hidden"><div class="page-head"><div><h1>予定調整</h1><p>参加できる日程を、○・△・×で回答できます。</p></div><a id="newSchedule" class="btn btn-success" href="/schedules/new">新しい予定調整</a></div><div class="schedule-periods btn-group mb-3" role="group" aria-label="予定の期間"><button type="button" class="btn btn-outline-secondary" data-period="upcoming" aria-pressed="true">これから・当日</button><button type="button" class="btn btn-outline-secondary" data-period="past" aria-pressed="false">終了した予定</button></div><div id="listError" class="alert alert-danger hidden" role="alert"><span id="listErrorText"></span> <button id="retryList" type="button" class="btn btn-outline-secondary">再試行</button></div><div id="scheduleList" class="schedule-list"></div><button id="more" class="btn btn-outline-secondary hidden">さらに読み込む</button></section>
+  <section id="editorView" class="hidden"><div class="page-head"><div><h1 id="editorTitle">予定調整を作成</h1><p id="editorHelp">下書き保存後、そのままチャンネルへ公開できます。</p></div><a class="btn btn-outline-secondary" href="/schedules">一覧へ</a></div>
+    <form id="scheduleForm" class="panel">
+      <section class="form-section" aria-labelledby="basicHeading">
+        <h2 id="basicHeading">基本情報</h2>
+        <div class="field"><label for="title">タイトル <span class="field-hint">必須</span></label><input class="form-control" id="title" maxlength="100" required></div>
+        <div class="field"><label for="channel">公開先チャンネル <span class="field-hint">必須</span></label><select class="form-select" id="channel" required></select></div>
+        <div class="field"><label for="description">説明 <span class="field-hint">任意</span></label><textarea class="form-control" id="description" maxlength="2000" rows="3"></textarea></div>
+      </section>
+      <section class="form-section" aria-labelledby="candidateHeading">
+        <h2 id="candidateHeading">候補日時 <span class="field-hint">必須・2件以上</span></h2>
+        <p id="candidateHelp" class="form-text">時刻を空欄にすると終日候補になります。回答が1件付くと候補日時は変更できません。</p>
+        <div id="candidates"></div>
+        <button class="btn btn-outline-secondary" id="addCandidate" type="button">＋ 候補を追加</button>
+      </section>
+      <section class="form-section" aria-labelledby="deadlineHeading">
+        <h2 id="deadlineHeading">回答期限</h2>
+        <div class="field"><label for="deadline">締切日時 <span class="field-hint">任意</span></label><input class="form-control" id="deadline" type="datetime-local"></div>
+      </section>
+      <div class="actions"><button class="btn btn-outline-secondary" id="saveDraft" type="submit">下書き保存</button><button class="btn btn-success hidden" id="publish" type="button">チャンネルに公開</button></div>
+    </form>
+  </section>
+  <section id="detailView" class="hidden"><div class="page-head"><div><div class="status" id="status"></div><h1 id="detailTitle"></h1><p id="detailDescription"></p><div class="meta" id="meta"></div></div><a class="btn btn-outline-secondary" href="/schedules">一覧へ</a></div><div id="finalResult" class="final-result hidden"></div>
+    <form id="responseForm" class="panel"><h2>あなたの回答</h2><div id="responseChoices"></div><div class="field"><label for="comment">コメント（任意）</label><input class="form-control" id="comment" maxlength="500"></div><div class="actions"><button class="btn btn-success">回答を保存</button></div></form>
+    <section id="resultsPanel" class="panel" aria-labelledby="resultsHeading"><h2 id="resultsHeading">みんなの回答</h2><div class="table-wrap" tabindex="0" role="region" aria-label="みんなの回答一覧"><table class="table align-middle" id="results"><thead></thead><tbody></tbody></table></div></section>
+    <section id="manage" class="panel hidden"><h2>管理</h2><div class="manage-actions"><button class="btn btn-outline-secondary" id="edit" type="button">内容を編集</button><button class="btn btn-success hidden" id="publishDetail" type="button">チャンネルに公開</button><button class="btn btn-outline-secondary hidden" id="close" type="button">回答を締め切る</button><button class="btn btn-outline-secondary hidden" id="reopen" type="button">回答を再開する</button><button class="btn btn-outline-danger hidden" id="withdraw" type="button">予定調整を取り消す</button><button class="btn btn-outline-secondary hidden" id="restore" type="button">取り消しを戻す</button></div><div id="finalizeBox" class="finalize hidden"><label for="finalCandidate">確定する候補</label><select class="form-select" id="finalCandidate"></select><button class="btn btn-success" id="finalize" type="button">この日程で確定して投稿</button></div></section>
+  </section>
+</main><div class="toast-container position-fixed top-0 end-0 p-3" id="toastContainer"></div><script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script><script src="/js/schedule.js"></script></body></html>

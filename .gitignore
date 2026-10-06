@@ -1,0 +1,14 @@
+/data/
+/.tmp/
+/dist/
+
+# Local executables and test artifacts
+/minihub
+/*.exe
+*.exe~
+# Keep local configuration private; publish only the sample.
+/*.json
+!/minihub.sample.json
+*.test
+
+.DS_Store

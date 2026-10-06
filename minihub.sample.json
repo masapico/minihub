@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "storage": { "type": "file" },
+  "server": {
+    "listenAddress": "127.0.0.1:8080",
+    "dataDir": "data",
+    "secureCookie": false,
+    "sessionTTL": "12h",
+    "tls": {
+      "enabled": false,
+      "certFile": "",
+      "keyFile": ""
+    }
+  },
+  "ui": {
+    "workspaceTitle": "minihub",
+    "loginMessage": "ユーザーIDとパスワードを入力してください。"
+  },
+  "features": {
+    "selfPasswordChange": true,
+    "networkPathMode": "copy"
+  },
+  "notifications": { "mentionRetentionDays": 365, "osNotificationsEnabled": true },
+  "retention": { "days": 0 },
+  "logging": { "level": "info" },
+  "initialAdmin": {
+    "id": "admin",
+    "name": "管理者",
+    "password": "CHANGE-ME"
+  }
+}

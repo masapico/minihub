@@ -1,0 +1,16 @@
+/* Shared visual language for chat and scheduling. */
+:root {
+    --ui-primary: #334155;
+    --ui-ink: #1e293b;
+    --ui-muted: #64748b;
+    --ui-line: #cbd5e1;
+    --ui-control-line: #94a3b8;
+    --ui-subtle: #f8fafc;
+    --ui-hover: #f1f5f9;
+    --ui-focus: #2563eb;
+    --ui-unread: #1d4ed8;
+    --ui-mention: #92400e;
+    --ui-mention-line: #b45309;
+    --ui-radius-control: 6px;
+    --ui-radius-panel: 8px;
+}

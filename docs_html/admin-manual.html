@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MiniHub 管理者向け操作マニュアル</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+<main>
+  <p class="breadcrumb"><a href="index.html">ドキュメント一覧</a></p>
+<h1 id="section-1">MiniHub 管理者向け操作マニュアル</h1>
+<nav aria-label="目次"><strong>目次</strong><ul><li><a href="#setup">初期設定と起動</a></li><li><a href="#section-3">ビルドと初回起動</a></li><li><a href="#section-5">起動オプション・表示設定</a></li><li><a href="#section-6">ログインとセッション</a></li><li><a href="#https">HTTP／HTTPSの選択</a></li><li><a href="#groups">グループ管理</a></li><li><a href="#users">ユーザー管理</a></li><li><a href="#channels">チャンネル管理</a></li><li><a href="#backup">バックアップと復元</a></li></ul></nav>
+<p>導入と日常管理の要点です。チャットの使い方は<a href="user-manual.html">ユーザー向け操作マニュアル</a>を参照してください。</p>
+<h2 id="setup">初期設定と起動</h2>
+<ol>
+<li><code>minihub.sample.json</code>を実際に使う<code>minihub.json</code>へコピーし、<code>initialAdmin.password</code>を8文字以上・UTF-8で72バイト以下の値に変更します。実設定ファイルには管理者だけがアクセスできるようにしてください。</li>
+<li><code>minihub -config minihub.json</code>で起動し、設定した管理者IDとパスワードでログインします。</li>
+<li>初期管理者の作成を確認したら、実設定ファイルから<code>initialAdmin</code>ブロックを削除します。</li>
+</ol>
+<p><code>storage.type</code>は<code>file</code>または<code>sqlite</code>です。省略時は<code>file</code>で、SQLiteもデータディレクトリ内に保存します。保存方式を変更する際は、設定値だけを切り替えず、停止中に<a href="sqlite.html">保存方式の選択・移行手順</a>を実行してください。</p>
+<p>HTTP／HTTPSは設定で一方を選びます。<code>server.tls.enabled</code>を省略するか<code>false</code>にするとHTTPです。HTTPSでは<code>true</code>にし、<code>server.tls.certFile</code>と<code>server.tls.keyFile</code>へPEM形式の証明書と秘密鍵のパスを指定します。相対パスは設定ファイルの所在ディレクトリが基準です。ポートは<code>server.listenAddress</code>で指定します。HTTPSではSecure Cookieが自動で有効になります。リバースプロキシでHTTPSを終端する場合はSecure Cookieを明示的に有効にします。証明書の信頼設定、秘密鍵のアクセス権、証明書更新の手順は<a href="#https">HTTP／HTTPSの選択</a>を参照してください。証明書や秘密鍵が不正なら起動を中止します。</p>
+<p><code>notifications.osNotificationsEnabled</code>は省略時<code>true</code>です。<code>false</code>ではOS通知ボタンが無効になり、管理者設定による利用不可を表示します。利用者が以前ONにしていてもOS通知を停止します。アプリ内通知と未読表示は継続します。<code>true</code>でも利用者自身のON操作とブラウザの許可が必要です。OS通知の接続元と管理対象Edgeの設定は<a href="browser-notifications.html">ブラウザAPIを使ったOS通知の設定</a>を参照してください。設定変更と証明書更新後はサービスを再起動し、開いている画面を再読み込みします。</p>
+<h2 id="section-3">ビルドと初回起動</h2>
+<p>Go 1.27以降が必要です。macOS／Linuxでは次のようにビルドします。</p>
+<pre><code>go build -o minihub ./cmd/minihub</code></pre>
+<p>Windows PowerShellでは次のように準備します。</p>
+<pre><code>go build -o minihub.exe ./cmd/minihub
+Copy-Item minihub.sample.json minihub.json</code></pre>
+<p><code>minihub.json</code>の<code>initialAdmin.password</code>を変更してから、<code>./minihub.exe -config minihub.json</code>で起動します。実設定はGit管理せず、管理者と実行アカウントだけが読み取れる権限にしてください。</p>
+<h3 id="section-4">macOS／Linuxの初期設定</h3>
+<p>推奨セットアップはサンプル設定のコピーです。初期パスワードを記入した実設定はGit管理せず、所有者だけが読めるようにしてください。</p>
+<pre><code>cp minihub.sample.json minihub.json
+chmod 600 minihub.json</code></pre>
+<p><code>initialAdmin.password</code> を8文字以上・UTF-8で72バイト以下に変更して初回起動します。管理者作成後は <code>initialAdmin</code> ブロックを <code>minihub.json</code> から削除してください。設定ファイルがない場合は、従来どおり次の環境変数でも初期化できます。</p>
+<p>初回起動では、管理者 <code>admin</code> を自動作成します。パスワードをシェル履歴へ残さないよう、次のように入力して起動してください（8文字以上、UTF-8で72バイト以下）。</p>
+<pre><code>printf &#x27;admin のパスワード: &#x27;
+read -r -s MINIHUB_ADMIN_PASSWORD
+export MINIHUB_ADMIN_PASSWORD
+echo
+./minihub -addr 127.0.0.1:8080 -data ./data
+unset MINIHUB_ADMIN_PASSWORD</code></pre>
+<p>環境変数方式では次の初期ユーザーを作成します。設定ファイル方式では <code>initialAdmin.id</code> と <code>name</code> を使用します。パスワードはユーザーJSONへ平文では保存されません。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">ユーザーID</th><th scope="col">表示名</th><th scope="col">ロール</th></tr></thead><tbody>
+<tr><td><code>admin</code></td><td>管理者</td><td>管理者</td></tr>
+</tbody></table></div>
+<p>この自動作成はデータディレクトリにユーザーが一人もいない場合だけ実行されます。2回目以降の起動では <code>MINIHUB_ADMIN_PASSWORD</code> は不要で、既存ユーザーのパスワードも変更されません。</p>
+<h2 id="section-5">起動オプション・表示設定</h2>
+<p>設定ファイルを明示して起動する方法を推奨します。ビルド済みファイルから起動する場合:</p>
+<pre><code>./minihub -config minihub.json</code></pre>
+<p>ソースから起動する場合:</p>
+<pre><code>go run ./cmd/minihub -config minihub.json</code></pre>
+<p><code>-config</code> には使用する設定ファイルのパスを指定します。設定ファイル内の相対的な <code>dataDir</code> は、設定ファイルの所在ディレクトリを基準に解決されます。設定変更後はサービスを再起動してください。</p>
+<p>通常起動時のサーバーログは <code>server.dataDir/server.log</code> に JSON 形式で追記します。<code>-data</code> を指定した場合は、そのディレクトリの <code>server.log</code> に出力します。再起動時に既存のログは消去されず、ローテーションも行いません。設定を読み込めない場合やログファイルを開けない場合のエラーは、標準エラーに表示します。</p>
+<p><code>-config</code> を省略した場合は、カレントディレクトリの <code>minihub.json</code> があれば自動的に読み込みます。明示した設定ファイルがない場合や、読み込んだ設定が不正な場合はエラーになります。初期管理者の環境変数は <code>MINIHUB_ADMIN_PASSWORD</code> を使用します。設定ファイルがない場合は、次のように待受アドレスとデータディレクトリをCLIフラグで指定できます。</p>
+<pre><code>./minihub -addr 127.0.0.1:8080 -data ./data</code></pre>
+<p>閉域内の他のパソコンから接続させる場合は、すべてのIPv4ネットワークインターフェースで待ち受ける<code>0.0.0.0:8080</code>を指定します。起動中の場合は一度停止してから実行してください。</p>
+<pre><code># Windows（PowerShell）
+./minihub.exe -config minihub.json -addr 0.0.0.0:8080</code></pre>
+<pre><code># macOS／Linux
+./minihub -config minihub.json -addr 0.0.0.0:8080</code></pre>
+<p>設定ファイルの<code>server.listenAddress</code>を<code>&quot;0.0.0.0:8080&quot;</code>へ変更する方法もあります。明示した<code>-addr</code>は設定ファイルの値より優先されます。ファイアウォールでは必要な閉域内の接続元からTCP 8080へのアクセスを許可します。他のパソコンからは、サーバー機のIPアドレスが<code>192.168.1.10</code>の場合、<code>http://192.168.1.10:8080/login</code>を開きます。</p>
+<p>画面に表示するワークスペース名とログインフォームの案内文は、<code>minihub.json</code> の <code>ui</code> で設定できます。<code>workspaceTitle</code> は通常画面左上、ログイン画面のブランド名、ブラウザタイトルに反映されます。設定変更後はサービスを再起動してください。</p>
+<pre><code>&quot;ui&quot;: {
+  &quot;workspaceTitle&quot;: &quot;社内チャット&quot;,
+  &quot;loginMessage&quot;: &quot;会社のアカウントでログインしてください。&quot;
+}</code></pre>
+<p>共有フォルダーやファイルの案内方法は <code>features.networkPathMode</code> で設定します。既定の <code>copy</code> では、UNCパスをアイコン付きの共有場所として表示し、利用者がパスをコピーできます。</p>
+<pre><code>&quot;features&quot;: {
+  &quot;selfPasswordChange&quot;: true,
+  &quot;networkPathMode&quot;: &quot;copy&quot;
+}</code></pre>
+<ul>
+<li><code>disabled</code>: 新しい共有パスの挿入を無効化します。過去の共有パスは読み取り可能な状態で表示します。</li>
+<li><code>copy</code>: 共有パスを挿入でき、パスのコピーボタンを表示します。</li>
+<li><code>open-and-copy</code>: コピーに加えて <code>file://</code> の「開く」を表示します。管理されたブラウザ環境でだけ使用してください。</li>
+</ul>
+<p>通常のHTTP/HTTPSリンクはどのモードでも利用できます。設定変更後はサービスを再起動してください。</p>
+<p>明示した <code>-addr</code>、<code>-data</code>、<code>-secure-cookie</code> は設定ファイルの値より優先されます。ただし、minihub自身のHTTPS待ち受けではSecure Cookieを必ず有効にします。設定を指定しない場合の既定値は、待受アドレスが <code>127.0.0.1:8080</code>、データディレクトリが <code>./data</code> です。別端末から接続させる場合は、ファイアウォールやリバースプロキシを適切に設定したうえで待受アドレスを変更してください。</p>
+<h2 id="section-6">ログインとセッション</h2>
+<p>起動後、ブラウザで次のURLを開きます。</p>
+<pre><code>http://127.0.0.1:8080/login</code></pre>
+<p>未認証で <code>/</code> を開いた場合も <code>/login</code> へ移動します。初回起動で登録したユーザーIDとパスワードを入力してください。ログイン後の通常画面にはログイン用パスワード欄を含めず、画面左上のログアウトアイコンから別ユーザーへ切り替えられます。</p>
+<p>ログインセッションの有効期間は12時間です。セッションはデータディレクトリの <code>sessions/</code> に保存されるため、有効期間内であればサーバーを再起動してもログイン状態が維持されます。ブラウザへ渡す生のセッショントークンはファイルへ保存しません。</p>
+<p>起動時、HTTP受付前に期限切れセッションを削除し、削除件数をログへ記録します。破損・期限欠落ファイルは保持し、読み込み・削除失敗は警告として記録して起動を継続します。定期掃除は行わないため、連続稼働中に期限切れになったファイルは、ログアウトなどの個別削除または次回起動時に整理されます。</p>
+<h2 id="https">HTTP／HTTPSの選択</h2>
+<p>minihub自身でHTTPSを待ち受ける場合は、設定ファイルの <code>server</code> に次の項目を設定します。</p>
+<pre><code>&quot;listenAddress&quot;: &quot;:8443&quot;,
+&quot;tls&quot;: {
+  &quot;enabled&quot;: true,
+  &quot;certFile&quot;: &quot;certs/server.crt&quot;,
+  &quot;keyFile&quot;: &quot;certs/server.key&quot;
+}</code></pre>
+<p><code>server.tls</code> の省略、または <code>enabled: false</code> では従来どおりHTTPで待ち受けます。HTTPとHTTPSのどちらか一方を選択し、同時待ち受けやHTTPからの自動リダイレクトは行いません。ポートは <code>listenAddress</code>（または <code>-addr</code>）で明示します。HTTPS例のURLは <code>https://&lt;サーバー名&gt;:8443/login</code> です。最低TLSバージョンは1.2です。</p>
+<p>証明書と秘密鍵はPEM形式で用意します。証明書ファイルには必要な中間証明書も含めてください。相対パスは設定ファイルの所在ディレクトリを基準に解決されます。証明書の名前が利用するサーバー名と一致し、有効期間内であり、組織のCAが利用者端末で信頼されていることを確認してください。秘密鍵はサービスの実行アカウントと管理者だけが読めるように権限を制限します。</p>
+<p>証明書・秘密鍵の欠落、読み取り失敗、形式不正、組み合わせ不一致では起動を中止し、HTTPには切り替えません。証明書を自動発行・自動更新する機能はありません。設定変更や証明書更新後はサービスを再起動し、開いている画面を再読み込みしてください。証明書が利用できなくても停止・移行・保存期間の管理コマンドは実行できます。</p>
+<p>minihub自身がHTTPSで待ち受ける場合は、セッションCookieの <code>Secure</code> 属性を必ず有効にします。<code>secureCookie: false</code> や <code>-secure-cookie=false</code> でも無効にはできません。リバースプロキシでHTTPSを終端し、minihubがHTTPで待ち受ける場合は、従来どおり <code>server.secureCookie: true</code> または <code>-secure-cookie</code> を指定します。</p>
+<h2 id="groups">グループ管理</h2>
+<ol>
+<li>管理者メニューの「グループ管理」→「新規作成」で、部署やチームのIDと表示名を登録します。</li>
+<li>グループを選び、「ユーザーを追加」から所属ユーザーを選択します。所属解除や表示名の変更もこの画面で行います。</li>
+<li>「割当チャンネル」で、そのグループが参加するチャンネルを確認します。</li>
+</ol>
+<p>グループを削除するとユーザーの所属とチャンネルへの割当も解除されます。確認画面の影響件数を見てから実行してください。グループIDは変更できません。</p>
+<p>グループの所属ユーザーと割当チャンネルを確認し、複数ユーザーを一括で追加・解除できます。グループIDには半角英数字、表示名には日本語を使えます。</p>
+<h2 id="users">ユーザー管理</h2>
+<ol>
+<li>管理者メニューの「ユーザー管理」で「新規登録」または「一括登録」を選びます。初期パスワード、権限、初期所属グループを指定します。</li>
+<li>登録済みユーザーを選ぶと、表示名・パスワード・権限・ログインの有効／無効を変更できます。パスワードを変えないときは新しいパスワード欄を空欄にします。</li>
+<li>登録後の所属変更は「グループ管理」で行います。</li>
+</ol>
+<p>ユーザーIDは変更できません。ユーザー編集画面で所属グループは確認できますが、変更はグループ管理で行います。最後の有効な全体管理者を無効化・一般ユーザーへ変更する操作は拒否されます。</p>
+<h2 id="channels">チャンネル管理</h2>
+<ol>
+<li>管理者メニューの「チャンネル作成」で表示名・ID・公開範囲を指定します。公開チャンネルにはユーザーが自由に参加でき、非公開チャンネルは設定された参加者だけが利用できます。</li>
+<li>作成後、「チャンネル管理」で対象を選び、「個別参加メンバー」「参加グループ」「チャンネル管理者」を設定します。追加や解除を行ったら、最後に「変更を保存」を押します。</li>
+<li>「基本設定」で表示名・公開範囲を変更できます。使わなくなったチャンネルは「アーカイブ」、再開時は「復元」を選びます。</li>
+</ol>
+<p>グループ経由の参加者は、個別参加を解除しても利用を続けられます。チャンネル管理者を交代するときは後任を追加してから前任を外してください。アーカイブでは履歴は削除されません。</p>
+<p>全体管理者以外にも、委任されたチャンネル管理者は担当チャンネルの参加者を管理できます。投稿・アンケート・公開済み予定調整の「取り消す」は保存データの物理削除ではありません。</p>
+<p>チャンネル管理画面では「個別参加メンバー」「参加グループ」「チャンネル管理者」のタブで設定済み一覧を切り替え、名前・IDで検索、昇順で並べ替えできます。「追加」から候補を複数選択し、最後に「変更を保存」で反映します。個別参加メンバーには公開チャンネルへ自分で参加したユーザーも含みます。個別参加を解除しても、参加グループ経由の参加は継続します。</p>
+<p>アーカイブしたチャネルは通常一覧から消え、履歴・投稿・既読・リアクション・予定調整へアクセスできなくなります。関連データは削除されず、復元すると再び利用できます。アーカイブ中も同じチャネルIDは再利用できません。</p>
+<h2 id="backup">バックアップと復元</h2>
+<ol>
+<li>サービスを停止し、書き込みが終わったことを確認します。</li>
+<li>設定の<code>server.dataDir</code>が指すデータディレクトリを、ファイルやサブディレクトリを含めて丸ごとコピーします。相対パスは設定ファイルのある場所が基準です。SQLiteではDB本体だけをコピーしないでください。</li>
+<li>復元するときもサービスを停止し、整合したバックアップのデータディレクトリ全体を戻します。既存データと混在させず、設定の保存方式とデータが一致することを確認して起動し、ログインと履歴の表示を確認します。</li>
+</ol>
+<p>稼働中のファイルをそのままコピーすると不整合になる可能性があります。バックアップからの復元を定期的に試してください。</p>
+<p>古い投稿の物理削除は、サービス停止中に<code>minihub retention -config minihub.json -policy</code>または<code>-before YYYY-MM-DD</code>で対象件数を確認し、<code>-apply</code>を付けて実行します。実行前にデータディレクトリ全体をバックアップしてください。境界と中断時の再実行方法は<a href="retention-proposal.html">投稿の物理削除</a>を参照してください。</p>
+<h3 id="windows-backup">Windowsのバックアップ</h3>
+<p>Windowsでは <code>scripts/backup.bat</code>（リポジトリに同梱） でサーバーの停止とZIPバックアップを実行できます。冒頭の <code>EXE</code>、<code>CONFIG</code>、<code>DATA_DIR</code>、<code>BACKUP_DIR</code> を環境に合わせて編集してください。<code>DATA_DIR</code> は設定ファイルの <code>server.dataDir</code> と同じ絶対パスにします。 日本語を含むパスを指定する場合、バッチファイルは ANSI（日本語 Windows では CP932）で保存し、改行コードは CRLF にしてください。LF のまま保存すると cmd.exe が行を誤って解釈します。</p>
+<p>コマンドプロンプトからは <code>scripts\backup.bat</code> を実行します。バックアップ後は <code>minihub.exe -config minihub.json</code> を手動で起動してください。</p>
+<p><code>backup.bat</code> は <code>minihub.exe stop -config &lt;設定ファイル&gt; -wait 60s</code> で停止を待ち、Windows標準の <code>tar.exe</code> でデータディレクトリ全体をZIP化します。途中のZIPは <code>.partial.zip</code> として作り、検査後に正式名へ変更します。スクリプトはサーバーを再起動しないため、失敗した場合も稼働状態を確認し、必要なら手動で起動してください。既存のバックアップは自動削除しないため、保存期間に応じて別途整理してください。 <code>DATA_DIR</code> がサーバーのデータディレクトリと一致していれば、<code>server.log</code> もZIPに含まれます。</p>
+<p>バックアップ先はデータディレクトリの外に置いてください。共有フォルダーなら、バックアップを実行するWindowsアカウントにUNCパスで書き込み権限を与えてください。復元時はサーバーを停止し、ZIP内のデータディレクトリを元の場所へ展開してから手動で起動します。</p>
+  <footer><a href="index.html">ドキュメント一覧へ戻る</a></footer>
+</main>
+</body>
+</html>

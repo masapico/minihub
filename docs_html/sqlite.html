@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MlniHub 保存方式の選択・移行・バックアップ</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+<main>
+  <p class="breadcrumb"><a href="index.html">ドキュメント一覧</a></p>
+<h1>保存方式の選択・移行・バックアップ</h1>
+<nav aria-label="目次"><strong>目次</strong><ul><li><a href="#choice">保存方式を選ぶ</a></li><li><a href="#migration">fileからSQLiteへ移行する</a></li><li><a href="#recovery">移行中にエラーや中断が起きた場合</a></li><li><a href="#backup">バックアップと復元</a></li></ul></nav>
+<p><a href="index.html">資料の目次</a> / <a href="admin-manual.html">管理者マニュアル</a></p>
+<h2 id="choice">保存方式を選ぶ</h2>
+<p>どちらも外部DBサーバーは不要です。設定ファイルの <code>storage.type</code> で選びます。省略時は <code>file</code> です。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">方式</th><th scope="col">保存先と特徴</th></tr></thead><tbody>
+<tr><td><code>file</code></td><td>データディレクトリ内のJSON・日付別JSONL。履歴の索引を起動時にメモリへ構築します。</td></tr>
+<tr><td><code>sqlite</code></td><td>データディレクトリ内の <code>minuhub.db</code>。永続索引から履歴を取得し、履歴全体をGoのメモリへ読み込みません。WALを使うためローカルディスクに置きます。</td></tr>
+</tbody></table></div>
+<p>新規導入では初回起動前に次の設定を選べます。既存データがある場合は、設定値だけを切り替えず、下記の移行手順を使ってください。保存方式とデータが一致しない場合、起動は拒否されます。</p>
+<pre><code>&quot;storage&quot;: {
+  &quot;type&quot;: &quot;sqlite&quot;
+}</code></pre>
+<p><code>server.dataDir</code> の相対パスは設定ファイルのあるディレクトリが基準です。CLIで <code>-data</code> を明示した場合はその値が優先されるため、移行と通常起動で同じディレクトリを指定します。</p>
+<h2 id="migration">fileからSQLiteへ移行する</h2>
+<p>対応する移行方向は <code>file</code> → <code>sqlite</code> のみです。SQLiteからfileへ戻す変換コマンドはありません。一時DBを作るため、移行元のデータに加えてDBを置ける空き容量を確保してください。</p>
+<ol>
+<li>サービスを停止し、プロセスの終了を確認します。macOS／Linuxでは前面起動ならCtrl+C、サービス管理下ならその停止操作を使います。Windowsでは <code>minihub.exe stop -config minihub.json -wait 60s</code> を使えます。</li>
+<li>データディレクトリ全体と設定ファイルを、データディレクトリの外へバックアップします。</li>
+<li>設定の <code>storage.type</code> は <code>file</code> のまま、次のコマンドで検証します。
+<pre><code>./minihub migrate -config minihub.json -to sqlite -dry-run</code></pre>
+<p>検証は一時DBで行い、保存方式を切り替えません。JSON出力の <code>records</code> には種別ごとの件数と照合値が入ります。<code>incompleteTails</code> が出た場合は、そこに示されたログの改行で完結していない末尾を除外しています。必要な投稿が欠けていないか確認してください。完全行の破損や未対応のレコードはエラーとなります。</p></li>
+<li>検証成功後、実際に移行します。コマンドがエラーなく終了したことを確認します。
+<pre><code>./minihub migrate -config minihub.json -to sqlite</code></pre></li>
+<li>設定ファイルの <code>storage.type</code> を <code>sqlite</code> へ変更し、起動します。
+<pre><code>./minihub -config minihub.json</code></pre></li>
+<li>ログイン、公開・非公開チャンネルの履歴、返信、未読、アンケート・予定調整を確認します。</li>
+</ol>
+<p>Windowsでは各コマンドの <code>./minihub</code> を <code>minihub.exe</code>（PowerShellでは <code>./minihub.exe</code>）へ置き換えます。</p>
+<p>移行は元のfileデータを変更せず、ID・連番・日時や関連イベントを引き継ぎます。移行後に残るfileデータは、その後の投稿を含まないため最新のバックアップとして使えません。</p>
+<h2 id="recovery">移行中にエラーや中断が起きた場合</h2>
+<p>サービスを停止したまま原因を確認します。DBの確定と保存方式の識別情報の更新の間で中断した場合は、同じ移行コマンドの再実行が確定済みDBを検証し、識別情報の更新を完了します。すでにSQLiteへの切り替えが完了している場合、再移行は拒否されます。無関係な既存DBも上書きしません。</p>
+<p><code>storage.json</code> やDBを手動で消して起動を通すことは避けてください。復旧できない場合は、移行前のバックアップを別の空ディレクトリへ丸ごと復元し、復元したデータに合う <code>storage.type=file</code> の設定で起動します。移行後に受け付けた投稿は、移行前バックアップには含まれません。</p>
+<h2 id="backup">バックアップと復元</h2>
+<p>両方式ともサービス停止後にデータディレクトリ全体をコピーします。SQLiteではDB本体だけをコピーせず、<code>storage.json</code>、残存するWALなどの関連ファイルも含めてください。設定ファイルも別途、アクセスを制限して保管します。</p>
+<p>復元時もサービスを停止し、既存データと混ぜずに整合したバックアップ全体を戻します。設定の <code>storage.type</code> と <code>server.dataDir</code> を確認してから起動し、ログインと履歴を確認します。DB破損時にfile方式へ自動で切り替わることはありません。</p>
+<p>Windowsの停止・ZIPバックアップは <a href="admin-manual.html#windows-backup">管理者マニュアルの手順</a>を参照してください。投稿の物理削除は <a href="retention-proposal.html">削除手順</a>に従って停止中に実行します。</p>
+<p>実装の詳細はリポジトリの <code>DESIGN.md</code>、両方式の試験や移行・復元の検証方法は <code>tests/README.md</code> を参照してください。</p>
+  <footer><a href="index.html">ドキュメント一覧へ戻る</a></footer>
+</main>
+</body>
+</html>
