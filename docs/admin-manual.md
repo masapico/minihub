@@ -123,7 +123,59 @@ go run ./cmd/minihub -config minihub.json
 
 通常のHTTP/HTTPSリンクはどのモードでも利用できます。設定変更後はサービスを再起動してください。
 
-明示した `-addr`、`-data`、`-secure-cookie` は設定ファイルの値より優先されます。ただし、minihub自身のHTTPS待ち受けではSecure Cookieを必ず有効にします。設定を指定しない場合の既定値は、待受アドレスが `127.0.0.1:8080`、データディレクトリが `./data` です。別端末から接続させる場合は、ファイアウォールやリバースプロキシを適切に設定したうえで待受アドレスを変更してください。
+明示した `-addr`、`-data`、`-base-path`、`-secure-cookie` は設定ファイルの値より優先されます。ただし、minihub自身のHTTPS待ち受けではSecure Cookieを必ず有効にします。設定を指定しない場合の既定値は、待受アドレスが `127.0.0.1:8080`、データディレクトリが `./data` です。別端末から接続させる場合は、ファイアウォールやリバースプロキシを適切に設定したうえで待受アドレスを変更してください。
+
+## リバースプロキシとベースパス
+
+既存のWebサーバーに相乗りし、`https://myhost.com/hub/` で公開する場合は、`minihub.json` の `server` に `basePath` を指定します。HTTPSをnginxで終端する例です。
+
+```json
+"server": {
+  "listenAddress": "127.0.0.1:8080",
+  "basePath": "/hub",
+  "dataDir": "data",
+  "secureCookie": true,
+  "sessionTTL": "12h"
+}
+```
+
+`basePath` の省略、空文字列、`"/"` はドメイン直下での公開です。`"/hub/"` は `"/hub"` に正規化します。`"/apps/chat"` のような複数階層も使用できます。各階層には半角英数字と `.`、`_`、`~`、`-` を使用でき、空の階層、`.` と `..` だけの階層、クエリ、フラグメント、パーセントエンコードは指定できません。不正な値は起動時にエラーになります。
+
+CLIでは `./minihub -config minihub.json -base-path /hub` と指定できます。明示した `-base-path` は設定ファイルより優先され、`-base-path=""` でドメイン直下へ戻せます。変更後はサービスを再起動し、画面を再読み込みしてください。
+
+nginxの `http` コンテキストに次の `map` を追加します。
+
+```nginx
+map $http_upgrade $minihub_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+```
+
+証明書を設定済みの `myhost.com` のHTTPS `server` ブロックに、次の `location` を追加します。
+
+```nginx
+location = /hub {
+    return 308 /hub/$is_args$args;
+}
+
+location ^~ /hub/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $minihub_connection_upgrade;
+    proxy_read_timeout 75s;
+}
+```
+
+`proxy_pass` の宛先には末尾の `/` を付けず、`/hub/` を保ったまま転送します。例えば `/hub/api/me` はminihubにも `/hub/api/me` として届く必要があります。ベースパスは設定値を使用し、`X-Forwarded-Prefix` からは推測しません。`Host` は外部のホスト名・ポートを保持し、`Upgrade` と `Connection` はWebSocket接続のために転送します。nginxの仕様は [proxy_pass](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass) と [WebSocket転送](https://nginx.org/en/docs/http/websocket.html) を参照してください。
+
+利用者は `https://myhost.com/hub/` または `/hub/login` へアクセスします。予定調整一覧は `/hub/schedules`、詳細は `/hub/schedules/<ID>`、APIは `/hub/api/...`、WebSocketは `/hub/api/realtime` です。ローカルの待受先へ直接接続する場合も `http://127.0.0.1:8080/hub/` のようにベースパスを付けます。ベースパス外のURLは404になります。
+
+セッションCookieの送信範囲は `/hub/` に限定します。ブラウザの表示設定・通知履歴・通知用Web Locksもベースパスごとに分けます。ドメイン直下では従来の保存キーを維持します。ベースパスを変更した場合は、新しいURLで再ログインし、表示設定やOS通知のON/OFFを設定し直してください。チャットデータの移行は不要です。
 
 ## ログインとセッション
 

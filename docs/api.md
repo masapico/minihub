@@ -2,6 +2,8 @@
 
 [開発・保守資料一覧](README.md) / [設計仕様](../DESIGN.md)
 
+本書のAPIパスはドメイン直下での公開を基準に記載します。`server.basePath: "/hub"` の場合は各パスの先頭に `/hub` を付け、以下の `base_url` は `https://myhost.com/hub` のように指定します。WebSocketも `/hub/api/realtime` です。
+
 ## 認証と使用例
 
 ```bash

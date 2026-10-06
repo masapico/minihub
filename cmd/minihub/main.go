@@ -57,6 +57,7 @@ func run() (runErr error) {
 	}
 	configPath := flag.String("config", config.DefaultFilename, "configuration file")
 	addr := flag.String("addr", "127.0.0.1:8080", "HTTP or HTTPS listen address")
+	basePath := flag.String("base-path", "", "URL base path (for example /hub)")
 	dataDir := flag.String("data", "data", "persistent data directory")
 	secureCookie := flag.Bool("secure-cookie", false, "send the session cookie only over HTTPS")
 	flag.Parse()
@@ -70,12 +71,19 @@ func run() (runErr error) {
 		if !explicit["addr"] {
 			*addr = cfg.Server.ListenAddress
 		}
+		if !explicit["base-path"] {
+			*basePath = cfg.Server.BasePath
+		}
 		if !explicit["data"] {
 			*dataDir = cfg.Server.DataDir
 		}
 		if !explicit["secure-cookie"] {
 			*secureCookie = cfg.Server.SecureCookie
 		}
+	}
+	*basePath, err = config.NormalizeBasePath(*basePath)
+	if err != nil {
+		return err
 	}
 
 	tlsConfig, err := loadServerTLS(cfg.Server.TLS)
@@ -119,21 +127,21 @@ func run() (runErr error) {
 	retention := time.Duration(cfg.Notifications.MentionRetentionDays) * 24 * time.Hour
 	svc := service.NewWithOptions(store, cfg.Features.SelfPasswordChange, retention)
 	ttl, _ := time.ParseDuration(cfg.Server.SessionTTL)
-	sessions := auth.NewManagerWithTTL(store, *secureCookie, ttl)
+	sessions := auth.NewManagerWithCookiePath(store, *secureCookie, ttl, *basePath+"/")
 	hub := realtime.New(sessions.Authenticate, svc.CanReadChannel, svc.CanPostChannel, logger)
 	hub.SetPresenceCandidates(svc.MentionCandidateIDs)
 	svc.SetMessagePublisher(hub)
 	mux := http.NewServeMux()
 	mux.Handle("/api/realtime", hub)
 	mux.Handle("/api/", httpapi.New(svc, sessions, logger))
-	mux.Handle("/", web.Handler(sessions, web.Options{WorkspaceTitle: cfg.UI.WorkspaceTitle, LoginMessage: cfg.UI.LoginMessage, NetworkPathMode: cfg.Features.NetworkPathMode, OSNotificationsEnabled: &cfg.Notifications.OSNotificationsEnabled}))
-	server := &http.Server{Addr: *addr, Handler: mux, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
+	mux.Handle("/", web.Handler(sessions, web.Options{BasePath: *basePath, WorkspaceTitle: cfg.UI.WorkspaceTitle, LoginMessage: cfg.UI.LoginMessage, NetworkPathMode: cfg.Features.NetworkPathMode, OSNotificationsEnabled: &cfg.Notifications.OSNotificationsEnabled}))
+	server := &http.Server{Addr: *addr, Handler: web.Mount(*basePath, mux), ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	server.TLSConfig = tlsConfig
 	scheme := "http"
 	if tlsConfig != nil {
 		scheme = "https"
 	}
-	logger.Info("minihub listening", "scheme", scheme, "address", *addr, "data", *dataDir, "storage", cfg.Storage.Type)
+	logger.Info("minihub listening", "scheme", scheme, "address", *addr, "basePath", *basePath, "data", *dataDir, "storage", cfg.Storage.Type)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if runtime.GOOS == "windows" {

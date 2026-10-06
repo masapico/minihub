@@ -20,7 +20,7 @@ const S = {
     },
     icon = (name) => name === "lock-fill"
         ? '<svg class="bi" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 0a4 4 0 0 1 4 4v2.05a2.5 2.5 0 0 1 2 2.45v5a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 2 13.5v-5a2.5 2.5 0 0 1 2-2.45V4a4 4 0 0 1 4-4m0 1a3 3 0 0 0-3 3v2h6V4a3 3 0 0 0-3-3"/></svg>'
-        : `<svg class="bi" aria-hidden="true"><use href="/vendor/bootstrap-icons/bootstrap-icons.svg#${name}"></use></svg>`,
+        : `<svg class="bi" aria-hidden="true"><use href="${Minihub.url("/vendor/bootstrap-icons/bootstrap-icons.svg")}#${name}"></use></svg>`,
     directMember = (c) => c?.members?.includes(S.me?.id),
     groupMember = (c) =>
         c?.groups?.some((id) => S.me?.groups?.includes(id)),
@@ -70,14 +70,14 @@ async function api(path, o = {}) {
         },
         r;
     try {
-        r = await fetch(path, { ...o, headers });
+        r = await fetch(Minihub.url(path), { ...o, headers });
     } catch (_) {
         throw Error("通信に失敗しました。ネットワーク接続を確認して、もう一度お試しください");
     }
     if (r.status === 204) return;
     let b = await r.json().catch(() => ({ error: "サーバーからの応答を読み取れませんでした" }));
     if (r.status === 401) {
-        location.replace("/login");
+        location.replace(Minihub.url("/login"));
         throw Error("セッションの有効期限が切れました");
     }
     if (!r.ok) throw Error(b.error || "操作に失敗しました。もう一度お試しください");
@@ -262,7 +262,7 @@ function svgIcon(name) {
         use = document.createElementNS("http://www.w3.org/2000/svg", "use");
     svg.classList.add("bi");
     svg.setAttribute("aria-hidden", "true");
-    use.setAttribute("href", `/vendor/bootstrap-icons/bootstrap-icons.svg#${name}`);
+    use.setAttribute("href", Minihub.url(`/vendor/bootstrap-icons/bootstrap-icons.svg#${name}`));
     svg.append(use);
     return svg;
 }
@@ -634,7 +634,7 @@ async function catchup() {
 }
 function realtime() {
     let w = new WebSocket(
-        `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/realtime`,
+        Minihub.websocketURL(),
     );
     S.ws = w;
     w.onopen = () => {
@@ -663,7 +663,7 @@ function realtime() {
 $("logout").onclick = async () => {
     try {
         await api("/api/auth/logout", { method: "POST" });
-        location.replace("/login");
+        location.replace(Minihub.url("/login"));
     } catch (error) {
         note("ログアウトできません: " + error.message, true);
     }
@@ -859,7 +859,7 @@ S.mentionCursor = "";
 S.mentionUnread = 0;
 
 function notificationStorageKey() {
-    return `minihub.notifications.${S.me?.id || "anonymous"}`;
+    return Minihub.storageKey(`minihub.notifications.${S.me?.id || "anonymous"}`);
 }
 function loadLocalNotifications() {
     try {
@@ -2145,7 +2145,7 @@ mobileChannelNav.addEventListener("change", () => {
 syncMobileChannelNav();
 
 function uiStorageKey(name) {
-    return `minihub:ui:${S.me?.id || "anonymous"}:${name}`;
+    return Minihub.storageKey(`minihub:ui:${S.me?.id || "anonymous"}:${name}`);
 }
 
 function readUIPreference(name) {
@@ -2644,7 +2644,7 @@ function scheduleReference(ref, messageText = "", withdrawn = false) {
         return null;
     const link = document.createElement("a");
     link.className = "schedule-message-link";
-    link.href = "/schedules/" + encodeURIComponent(ref.id);
+    link.href = Minihub.url("/schedules/" + encodeURIComponent(ref.id));
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     link.innerHTML = icon(ref.event === "finalized" ? "calendar-check" : "calendar3");
@@ -3367,7 +3367,7 @@ $("messages").addEventListener("scroll", () => {
 
 realtime = function () {
     const socket = new WebSocket(
-        `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/realtime`,
+        Minihub.websocketURL(),
     );
     S.ws = socket;
     socket.onopen = () => {

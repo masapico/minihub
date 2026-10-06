@@ -40,13 +40,14 @@ type failures struct {
 }
 
 type Manager struct {
-	storage   storage.Storage
-	secure    bool
-	ttl       time.Duration
-	mu        sync.Mutex
-	sessions  map[string]session
-	failures  map[string]failures
-	dummyHash []byte
+	storage    storage.Storage
+	secure     bool
+	cookiePath string
+	ttl        time.Duration
+	mu         sync.Mutex
+	sessions   map[string]session
+	failures   map[string]failures
+	dummyHash  []byte
 }
 
 func NewManager(store storage.Storage, secureCookie bool) *Manager {
@@ -54,8 +55,13 @@ func NewManager(store storage.Storage, secureCookie bool) *Manager {
 }
 
 func NewManagerWithTTL(store storage.Storage, secureCookie bool, ttl time.Duration) *Manager {
+	return NewManagerWithCookiePath(store, secureCookie, ttl, "/")
+}
+
+// NewManagerWithCookiePath scopes login and logout cookies to the deployment.
+func NewManagerWithCookiePath(store storage.Storage, secureCookie bool, ttl time.Duration, cookiePath string) *Manager {
 	dummyHash, _ := bcrypt.GenerateFromPassword([]byte("invalid-password-placeholder"), bcrypt.DefaultCost)
-	return &Manager{storage: store, secure: secureCookie, ttl: ttl, sessions: make(map[string]session), failures: make(map[string]failures), dummyHash: dummyHash}
+	return &Manager{storage: store, secure: secureCookie, cookiePath: cookiePath, ttl: ttl, sessions: make(map[string]session), failures: make(map[string]failures), dummyHash: dummyHash}
 }
 
 func (m *Manager) Login(w http.ResponseWriter, r *http.Request, userID, password string) (string, string, error) {
@@ -94,7 +100,7 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, userID, password
 	m.sessions[hash] = current
 	m.removeExpiredLocked(now)
 	m.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: token, Path: "/", MaxAge: int(m.ttl.Seconds()), Expires: now.Add(m.ttl), HttpOnly: true, Secure: m.secure, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: token, Path: m.cookiePath, MaxAge: int(m.ttl.Seconds()), Expires: now.Add(m.ttl), HttpOnly: true, Secure: m.secure, SameSite: http.SameSiteStrictMode})
 	return user.ID, csrf, nil
 }
 
@@ -152,7 +158,7 @@ func (m *Manager) Logout(w http.ResponseWriter, r *http.Request) error {
 		deleteErr = m.storage.DeleteSession(r.Context(), hash)
 		m.mu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(1, 0), HttpOnly: true, Secure: m.secure, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: m.cookiePath, MaxAge: -1, Expires: time.Unix(1, 0), HttpOnly: true, Secure: m.secure, SameSite: http.SameSiteStrictMode})
 	return deleteErr
 }
 

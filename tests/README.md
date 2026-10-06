@@ -10,6 +10,20 @@ go test -race ./...
 
 `go test -race`にはCGOとCコンパイラーが必要です。対応する環境で実行してください。
 
+## ベースパスとリバースプロキシ
+
+`node --test tests/urls.test.mjs` は追加ライブラリなしで、URL生成とログインの戻り先の検証を実行します。Goテストでは設定の検証・正規化、公開パスの境界、静的アセットとページ内リンク、認証リダイレクトを確認します。
+
+`base-path-browser.cjs` は一時データの実サーバーと、パス・Hostを保持するHTTP／WebSocketプロキシでブラウザ操作を検証します。Playwrightが `NODE_PATH` 上に必要です。`BROWSER_PATH` でChromium系ブラウザを指定できます。Windowsでは省略時にEdgeを使用します。
+
+```powershell
+go build -o .tmp/minihub-base-path.exe ./cmd/minihub
+$env:NODE_PATH = (Resolve-Path '.tmp/ui-review/node_modules').Path
+node tests/base-path-browser.cjs .tmp/minihub-base-path.exe
+```
+
+ドメイン直下と `/hub` をfile方式、`/apps/chat` をSQLite方式・CLIによる設定上書きで確認します。ログイン後の詳細画面への復帰、予定調整の作成・編集・公開・一覧の期間切替と戻る操作、チャット内リンク・別タブでの作成、Cookieの送信範囲とログアウト、静的アセット、リアルタイム投稿、WebSocket再接続での取り逃し取得を検証します。予定調整のシナリオには専用の一時データだけを使用し、終了時に削除します。
+
 ## ブラウザ検証
 
 ## READMEの画面画像を更新する

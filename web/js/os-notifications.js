@@ -75,7 +75,7 @@ $("osNotificationToggle").onclick = async () => {
 };
 
 function osFocusLockName() {
-    return `minihub:os-notifications:focused:${S.me.id}`;
+    return Minihub.storageKey(`minihub:os-notifications:focused:${S.me.id}`);
 }
 
 function updateOSFocusLock() {
@@ -149,13 +149,13 @@ async function showOSNotification(target) {
     const userID = S.me.id;
     const entry = `${target.channelId}:${target.seq}`;
     try {
-        await navigator.locks.request(`minihub:os-notifications:display:${userID}`, async () => {
+        await navigator.locks.request(Minihub.storageKey(`minihub:os-notifications:display:${userID}`), async () => {
             if (S.me?.id !== userID || !osNotificationEnabled()) return;
             if (document.visibilityState === "visible" && document.hasFocus()) return;
             const focus = await navigator.locks.query();
             if (S.me?.id !== userID || !osNotificationEnabled()) return;
             if (focus.held.some((lock) => lock.name === osFocusLockName())) return;
-            const storageKey = `minihub:os-notifications:shown:${userID}`;
+            const storageKey = Minihub.storageKey(`minihub:os-notifications:shown:${userID}`);
             const now = Date.now();
             let shown = [];
             try {
@@ -167,7 +167,7 @@ async function showOSNotification(target) {
             if (shown.some((item) => item[0] === entry)) return;
             const notification = new Notification(`# ${target.channelName}`, {
                 body: target.body,
-                tag: `minihub:${userID}:${entry}`,
+                tag: Minihub.storageKey(`minihub:${userID}:${entry}`),
             });
             notification.onclick = () => {
                 notification.close();

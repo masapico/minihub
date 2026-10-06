@@ -3,6 +3,7 @@
   "storage": { "type": "file" },
   "server": {
     "listenAddress": "127.0.0.1:8080",
+    "basePath": "",
     "dataDir": "data",
     "secureCookie": false,
     "sessionTTL": "12h",

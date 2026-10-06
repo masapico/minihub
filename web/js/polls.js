@@ -11,7 +11,7 @@ function optionInput(value=""){
 function canCreate(){return !!S.channel&&member(S.channel)}
 function openCreate(){if(!canCreate())return;createRequestID=[...crypto.getRandomValues(new Uint8Array(16))].map(x=>x.toString(16).padStart(2,"0")).join("");$("pollForm").reset();optionHost.replaceChildren();optionInput();optionInput();$("pollCreateError").textContent="";createModal.show();$("pollQuestion").focus();}
 $("createPoll").onclick=openCreate;
-$("createSchedule").onclick=()=>{if(canCreate())window.open("/schedules/new?channelId="+encodeURIComponent(S.channel.id),"_blank","noopener,noreferrer")};
+$("createSchedule").onclick=()=>{if(canCreate())window.open(Minihub.url("/schedules/new?channelId="+encodeURIComponent(S.channel.id)),"_blank","noopener,noreferrer")};
 $("addPollOption").onclick=()=>{if(optionHost.children.length<10)optionInput()};
 $("pollForm").onsubmit=async event=>{
   event.preventDefault();if(!canCreate())return;
@@ -81,7 +81,7 @@ async function refreshSidebar(){
       if(item.kind==="schedule"){
         const button=text("button","予定 · "+item.title,"poll-side-item");
         button.type="button";
-        button.onclick=()=>window.open("/schedules/"+encodeURIComponent(item.data.id),"_blank","noopener,noreferrer");
+        button.onclick=()=>window.open(Minihub.url("/schedules/"+encodeURIComponent(item.data.id)),"_blank","noopener,noreferrer");
         rows.append(button);
         continue;
       }

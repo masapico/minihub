@@ -1,10 +1,5 @@
 # DESIGN.md — minihub
 
-## 公開用の識別子（2026-10-06）
-
-Goモジュールは `github.com/masapico/minihub`、起動コマンドは `cmd/minihub`、実行ファイルは `minihub`／`minihub.exe`、配布物は `minihub_<version>_<os>_<arch>` とします。設定例は `minihub.sample.json`、既定設定ファイルは `minihub.json`、初期管理者の環境変数は `MINIHUB_ADMIN_PASSWORD` です。
-
-SQLiteファイルは `dataDir/minuhub.db`、プロセスロックは `.minihub.lock`、Windows停止イベントの接頭辞は `Global\minihub-stop-` とします。Cookie名は `minihub_session`、ブラウザ設定・Web Locks・通知タグの接頭辞は `minihub` です。設定ファイルと初期管理者の環境変数は上記の識別子のみを使用します。保存形式・バージョン・APIは維持します。
 
 ## 1. 目的
 
@@ -509,3 +504,17 @@ SQLiteはローカルディスクで運用します。稼働中DBの単体コピ
 投票のメタデータは `polls/<poll-id>/meta.json`（file）または `polls` テーブル（SQLite）に保存する。回答変更は file の `responses.jsonl` または SQLite の `poll_response_events` に追記し、ユーザーごとの最新イベントを現在回答とする。file の末尾不完全行は復旧時に切り詰める。SQLite の既存 v1 は起動時に v2 へ更新する。停止中の file→SQLite 移行では投票メタデータと回答イベントを元データを変えず移す。
 
 公開時にチャンネルへ投票参照付きメッセージを投稿する。作成リクエストの `requestId` を投票IDとして使い、同じ内容の再送では既存の投稿を返す。途中で保存が止まった場合は同じIDで投稿を再開し、投票参照によって二重投稿を防ぐ。投票の作成・回答にはチャンネル投稿権限、閲覧にはチャンネル閲覧権限を適用する。API は集計と本人の回答だけを返し、他人の回答を返さない。回答者IDは重複防止と期限前の回答変更のため永続化する。回答変更時は最新回答の連番を使って競合を検出する。締切はサーバー時刻で判定する。保存後の `poll_changed` は識別子とリビジョンのみ通知し、クライアントは集計を再取得する。
+
+## 公開用の識別子
+
+Goモジュールは `github.com/masapico/minihub`、起動コマンドは `cmd/minihub`、実行ファイルは `minihub`／`minihub.exe`、配布物は `minihub_<version>_<os>_<arch>` とします。設定例は `minihub.sample.json`、既定設定ファイルは `minihub.json`、初期管理者の環境変数は `MINIHUB_ADMIN_PASSWORD` です。
+
+SQLiteファイルは `dataDir/minuhub.db`、プロセスロックは `.minihub.lock`、Windows停止イベントの接頭辞は `Global\minihub-stop-` とします。Cookie名は `minihub_session`、ブラウザ設定・Web Locks・通知タグの接頭辞は `minihub` です。設定ファイルと初期管理者の環境変数は上記の識別子のみを使用します。保存形式・バージョン・APIは維持します。
+
+## ベースパス対応
+
+`server.basePath`（CLI: `-base-path`）でURLの公開先を指定します。省略・空文字列・`/` は従来のドメイン直下、`/hub/` は末尾のスラッシュを除いた `/hub` として扱います。設定読込とCLI適用時に絶対パスを検証し、空階層・ドット階層・URLエスケープ・クエリ等を拒否します。
+
+HTTP入口でベースパスの境界を判定し、UI・API・WebSocketへ渡す前に一度だけ除きます。ベースパス外は404、末尾スラッシュのないアプリのルートはクエリを維持して308で正規URLへ移動します。リバースプロキシは公開URLのパスとHostを保持して転送します。転送ヘッダーからベースパスは推測しません。APIと業務ロジックの内部ルートは従来のままです。
+
+HTMLはベースパス付きのリンク・静的アセットURLを描画し、共通の `js/urls.js` を各ページで先に読み込みます。動的リンク、API呼出し、WebSocket、予定調整のページ判定、認証リダイレクトも同じ設定を使用します。ログインの戻り先は同じベースパス内の予定調整URLだけを許可します。CookieのPathはベースパスと末尾スラッシュ（ルート配備では `/`）とし、ブラウザ保存キー・通知用Web Locks・通知タグもベースパスで分離します。ルート配備の既存保存キーは維持します。永続化形式と書込み・認可の保証は変更しません。

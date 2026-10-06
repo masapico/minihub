@@ -31,7 +31,7 @@ const assert = require('node:assert/strict');
             if (p.startsWith('/api/')) return route.fulfill({ json: {} });
             const file = path.join(__dirname, '..', 'web', p === '/' ? 'index.html' : p);
             let body = fs.readFileSync(file);
-            if (p === '/') body = Buffer.from(body.toString().replaceAll('{{.WorkspaceTitle}}', 'minihub').replaceAll('{{.NetworkPathMode}}', 'copy'));
+            if (p === '/') body = Buffer.from(body.toString().replaceAll('{{.BasePath}}', '').replaceAll('{{.WorkspaceTitle}}', 'minihub').replaceAll('{{.NetworkPathMode}}', 'copy'));
             await route.fulfill({ body, contentType: p.endsWith('.css') ? 'text/css' : p.endsWith('.js') ? 'text/javascript' : p.endsWith('.svg') ? 'image/svg+xml' : 'text/html' });
         });
         await page.goto('http://chat.test/');

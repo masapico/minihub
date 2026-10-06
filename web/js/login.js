@@ -16,7 +16,7 @@ $("loginForm").addEventListener("submit", async (event) => {
     try {
         let response;
         try {
-            response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: $("uid").value, password: $("pw").value }) });
+            response = await fetch(Minihub.url("/api/auth/login"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: $("uid").value, password: $("pw").value }) });
         } catch (_) {
             throw new Error("通信に失敗しました。ネットワーク接続を確認して、もう一度お試しください");
         }
@@ -25,8 +25,7 @@ $("loginForm").addEventListener("submit", async (event) => {
         event.target.reset();
         $("pw").type = "password";
         const next = new URLSearchParams(location.search).get("next");
-        const safeNext = next === "/schedules" || next?.startsWith("/schedules/") || next?.startsWith("/schedules?");
-        location.replace(safeNext ? next : "/");
+        location.replace(Minihub.scheduleReturnURL(next));
     } catch (error) {
         $("pw").value = "";
         $("pw").type = "password";

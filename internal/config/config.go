@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -32,6 +33,7 @@ type UI struct {
 type Server struct {
 	TLS           TLS    `json:"tls"`
 	ListenAddress string `json:"listenAddress"`
+	BasePath      string `json:"basePath"`
 	DataDir       string `json:"dataDir"`
 	SecureCookie  bool   `json:"secureCookie"`
 	SessionTTL    string `json:"sessionTTL"`
@@ -102,6 +104,10 @@ func Load(path string, explicit bool) (Config, bool, error) {
 	if cfg.Storage.Type != "file" && cfg.Storage.Type != "sqlite" {
 		return cfg, false, errors.New("storage.type must be file or sqlite")
 	}
+	cfg.Server.BasePath, err = NormalizeBasePath(cfg.Server.BasePath)
+	if err != nil {
+		return cfg, false, err
+	}
 	if cfg.Server.TLS.Enabled && (cfg.Server.TLS.CertFile == "" || cfg.Server.TLS.KeyFile == "") {
 		return cfg, false, errors.New("server.tls.certFile and server.tls.keyFile are required when TLS is enabled")
 	}
@@ -164,4 +170,28 @@ func Load(path string, explicit bool) (Config, bool, error) {
 		cfg.Server.DataDir = filepath.Join(filepath.Dir(path), cfg.Server.DataDir)
 	}
 	return cfg, true, nil
+}
+
+// NormalizeBasePath accepts an absolute URL path, not a URL or an encoded path.
+// The empty string and "/" select the legacy deployment at the host root.
+func NormalizeBasePath(value string) (string, error) {
+	if value == "" || value == "/" {
+		return "", nil
+	}
+	invalid := errors.New("server.basePath must be an absolute path with segments containing only ASCII letters, digits, '.', '_', '~', or '-'; empty segments, '.' and '..' are not allowed")
+	if !strings.HasPrefix(value, "/") {
+		return "", invalid
+	}
+	value = strings.TrimSuffix(value, "/")
+	for _, segment := range strings.Split(value[1:], "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", invalid
+		}
+		for _, c := range segment {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("._~-", c)) {
+				return "", invalid
+			}
+		}
+	}
+	return value, nil
 }
