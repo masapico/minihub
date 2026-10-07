@@ -10,7 +10,7 @@
 <main>
   <p class="breadcrumb"><a href="index.html">ドキュメント一覧</a></p>
 <h1 id="section-1">MiniHub 管理者向け操作マニュアル</h1>
-<nav aria-label="目次"><strong>目次</strong><ul><li><a href="#setup">初期設定と起動</a></li><li><a href="#section-3">ビルドと初回起動</a></li><li><a href="#section-5">起動オプション・表示設定</a></li><li><a href="#base-path">リバースプロキシとベースパス</a></li><li><a href="#section-6">ログインとセッション</a></li><li><a href="#https">HTTP／HTTPSの選択</a></li><li><a href="#groups">グループ管理</a></li><li><a href="#users">ユーザー管理</a></li><li><a href="#channels">チャンネル管理</a></li><li><a href="#backup">バックアップと復元</a></li></ul></nav>
+<nav aria-label="目次"><strong>目次</strong><ul><li><a href="#setup">初期設定と起動</a></li><li><a href="#section-3">ビルドと初回起動</a></li><li><a href="#section-5">起動オプション・表示設定</a></li><li><a href="#base-path">リバースプロキシとベースパス</a></li><li><a href="#section-6">ログインとセッション</a></li><li><a href="#https">HTTP／HTTPSの選択</a></li><li><a href="#groups">グループ管理</a></li><li><a href="#users">ユーザー管理</a></li><li><a href="#channels">チャンネル管理</a></li><li><a href="#backup">バックアップと復元</a></li><li><a href="#aiアカウント">AIアカウント</a></li></ul></nav>
 <p>導入と日常管理の要点です。チャットの使い方は<a href="user-manual.html">ユーザー向け操作マニュアル</a>を参照してください。</p>
 <h2 id="setup">初期設定と起動</h2>
 <ol>
@@ -167,6 +167,20 @@ location ^~ /hub/ {
 <p>コマンドプロンプトからは <code>scripts\backup.bat</code> を実行します。バックアップ後は <code>minihub.exe -config minihub.json</code> を手動で起動してください。</p>
 <p><code>backup.bat</code> は <code>minihub.exe stop -config &lt;設定ファイル&gt; -wait 60s</code> で停止を待ち、Windows標準の <code>tar.exe</code> でデータディレクトリ全体をZIP化します。途中のZIPは <code>.partial.zip</code> として作り、検査後に正式名へ変更します。スクリプトはサーバーを再起動しないため、失敗した場合も稼働状態を確認し、必要なら手動で起動してください。既存のバックアップは自動削除しないため、保存期間に応じて別途整理してください。 <code>DATA_DIR</code> がサーバーのデータディレクトリと一致していれば、<code>server.log</code> もZIPに含まれます。</p>
 <p>バックアップ先はデータディレクトリの外に置いてください。共有フォルダーなら、バックアップを実行するWindowsアカウントにUNCパスで書き込み権限を与えてください。復元時はサーバーを停止し、ZIP内のデータディレクトリを元の場所へ展開してから手動で起動します。</p>
+<h2 id="aiアカウント">AIアカウント</h2>
+<p><code>minihub.json</code>の<code>aiAccounts</code>に接続先を追加して再起動します。省略・空配列では無効です。</p>
+<pre><code>&quot;aiAccounts&quot;: [{
+  &quot;id&quot;: &quot;assistant&quot;,
+  &quot;name&quot;: &quot;社内アシスタント&quot;,
+  &quot;enabled&quot;: true,
+  &quot;url&quot;: &quot;http://ai-server:8080/minihub&quot;,
+  &quot;timeout&quot;: &quot;120s&quot;,
+  &quot;tokenEnv&quot;: &quot;MINIHUB_AI_ASSISTANT_TOKEN&quot;
+}]</code></pre>
+<p><code>id</code>・<code>name</code>・<code>url</code>は必須、<code>enabled</code>の既定値は<code>true</code>、<code>timeout</code>は<code>120s</code>です。認証不要なら<code>tokenEnv</code>を省略します。指定した環境変数にBearerトークンを設定してminihubを起動してください。設定変更は再起動で反映します。URLと認証情報はブラウザに公開しません。</p>
+<p>全チャンネルで投稿可能なユーザーが利用でき、非公開チャンネルの内容も設定先へ送信されます。通常投稿からはその投稿のみ、スレッドからは親投稿と呼び出しまでの返信を送信します。上限は親投稿込み1,000件・依頼JSON 1 MiBです。回答本文は16 KiB以内です。</p>
+<p>同時実行4件・待機32件で、自動再送と再起動後の再開はありません。タイムアウトでも外部処理が実行済みの場合があります。AI用の<code>ai_</code>接頭辞は人ユーザーに使用できず、AI有効化時に既存ユーザーとの衝突を検査します。</p>
+<p>SQLiteは起動時にスキーマv4へ更新します。事前に停止してデータディレクトリ全体をバックアップし、旧バイナリへ戻す場合は更新前バックアップを使用してください。接続先APIの実装には<a href="ai.html">AI連携のHTTP契約</a>を参照してください。</p>
   <footer><a href="index.html">ドキュメント一覧へ戻る</a></footer>
 </main>
 </body>

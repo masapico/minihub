@@ -460,11 +460,19 @@ func importMeta(ctx context.Context, tx *sql.Tx, kind, id string, b []byte, d Ma
 	return d.add(kind, id, v)
 }
 func validateReferences(ctx context.Context, tx *sql.Tx) error {
+	var hasAI int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM pragma_table_info('messages') WHERE name='ai'").Scan(&hasAI); err != nil {
+		return err
+	}
+	missingAuthor := "NOT EXISTS(SELECT 1 FROM users u WHERE u.id=m.user_id)"
+	if hasAI != 0 {
+		missingAuthor = "(m.ai IS NULL AND " + missingAuthor + ")"
+	}
 	checks := []struct{ name, query string }{
 		{"channel counter", `SELECT 1 FROM messages m GROUP BY channel_id HAVING MAX(seq)>COALESCE((SELECT last_seq FROM counters c WHERE c.kind='channel' AND c.id=m.channel_id),-1) LIMIT 1`},
 		{"schedule counter", `SELECT 1 FROM response_events r GROUP BY schedule_id HAVING MAX(seq)<>COALESCE((SELECT last_seq FROM counters c WHERE c.kind='schedule' AND c.id=r.schedule_id),-1) LIMIT 1`},
 		{"read watermark", `SELECT 1 FROM read_state r WHERE r.last_seq>COALESCE((SELECT last_seq FROM counters c WHERE c.kind='channel' AND c.id=r.channel_id),0) LIMIT 1`},
-		{"message channel/user", `SELECT 1 FROM messages m WHERE NOT EXISTS(SELECT 1 FROM channels c WHERE c.id=m.channel_id) OR NOT EXISTS(SELECT 1 FROM users u WHERE u.id=m.user_id) LIMIT 1`},
+		{"message channel/user", "SELECT 1 FROM messages m WHERE NOT EXISTS(SELECT 1 FROM channels c WHERE c.id=m.channel_id) OR " + missingAuthor + " LIMIT 1"},
 		{"thread root", `SELECT 1 FROM messages m WHERE root>0 AND NOT EXISTS(SELECT 1 FROM messages p WHERE p.channel_id=m.channel_id AND p.seq=m.root AND p.root=0) LIMIT 1`},
 		{"reaction reference", `SELECT 1 FROM reaction_events r WHERE NOT EXISTS(SELECT 1 FROM messages m WHERE m.channel_id=r.channel_id AND m.seq=r.seq) OR NOT EXISTS(SELECT 1 FROM users u WHERE u.id=r.user_id) LIMIT 1`},
 		{"response reference", `SELECT 1 FROM response_events r WHERE NOT EXISTS(SELECT 1 FROM schedules s WHERE s.id=r.schedule_id) OR NOT EXISTS(SELECT 1 FROM users u WHERE u.id=r.user_id) LIMIT 1`},
@@ -530,8 +538,16 @@ func databaseManifest(ctx context.Context, tx *sql.Tx) (Manifest, error) {
 			return nil, err
 		}
 	}
+	var hasAI int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM pragma_table_info('messages') WHERE name='ai'").Scan(&hasAI); err != nil {
+		return nil, err
+	}
+	columns := messageColumns
+	if hasAI == 0 {
+		columns = strings.TrimSuffix(columns, ",ai") + ",NULL"
+	}
 	queries := []struct{ kind, query string }{
-		{"messages", "SELECT channel_id," + messageColumns + " FROM messages"},
+		{"messages", "SELECT channel_id," + columns + " FROM messages"},
 		{"reaction_events", "SELECT event_id,channel_id,seq,user_id,key,active,ts,version FROM reaction_events"},
 		{"response_events", "SELECT schedule_id,seq,data FROM response_events"},
 		{"poll_response_events", "SELECT poll_id,seq,data FROM poll_response_events"},
@@ -562,9 +578,9 @@ func databaseManifest(ctx context.Context, tx *sql.Tx) (Manifest, error) {
 				v = json.RawMessage(b)
 			case "messages":
 				var ch, ts string
-				var ids, sch, event, poll sql.NullString
+				var ids, sch, event, poll, ai sql.NullString
 				var m domain.Message
-				err = rows.Scan(&ch, &m.Seq, &m.ID, &ts, &m.UserID, &m.Text, &m.ThreadRootSeq, &ids, &sch, &event, &poll)
+				err = rows.Scan(&ch, &m.Seq, &m.ID, &ts, &m.UserID, &m.Text, &m.ThreadRootSeq, &ids, &sch, &event, &poll, &ai)
 				if err == nil {
 					m.Timestamp, err = time.Parse(time.RFC3339Nano, ts)
 				}
@@ -576,6 +592,9 @@ func databaseManifest(ctx context.Context, tx *sql.Tx) (Manifest, error) {
 				}
 				if poll.Valid {
 					m.PollRef = &domain.PollReference{ID: poll.String}
+				}
+				if err == nil && ai.Valid {
+					err = json.Unmarshal([]byte(ai.String), &m.AI)
 				}
 				key = ch + "/" + strconv.FormatInt(m.Seq, 10)
 				v = m

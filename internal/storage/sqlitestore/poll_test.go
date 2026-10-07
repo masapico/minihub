@@ -74,7 +74,7 @@ func TestUpgradeV1ForPolls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec(`DROP TABLE polls; DROP TABLE poll_response_events; DROP INDEX message_poll; ALTER TABLE messages DROP COLUMN poll_id; PRAGMA user_version=1;`)
+	_, err = db.Exec(`DROP TABLE polls; DROP TABLE poll_response_events; DROP INDEX message_poll; ALTER TABLE messages DROP COLUMN poll_id; ALTER TABLE messages DROP COLUMN ai; PRAGMA user_version=1;`)
 	if err != nil {
 		t.Fatal(err)
 	}

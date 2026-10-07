@@ -24,6 +24,7 @@
   "notifications": { "mentionRetentionDays": 365, "osNotificationsEnabled": true },
   "retention": { "days": 0 },
   "logging": { "level": "info" },
+  "aiAccounts": [],
   "initialAdmin": {
     "id": "admin",
     "name": "管理者",

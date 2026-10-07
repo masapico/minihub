@@ -10,7 +10,7 @@
 <main>
   <p class="breadcrumb"><a href="index.html">ドキュメント一覧</a></p>
 <h1 id="section-1">MiniHub ユーザー向け操作マニュアル</h1>
-<nav aria-label="目次"><strong>目次</strong><ul><li><a href="#login">ログインとチャンネル</a></li><li><a href="#messages">投稿・返信・リアクション</a></li><li><a href="#updates">通知と既読</a></li><li><a href="#polls">アンケート</a></li><li><a href="#schedules">予定調整</a></li><li><a href="#account">アカウント</a></li><li><a href="#troubleshooting">困ったとき</a></li></ul></nav>
+<nav aria-label="目次"><strong>目次</strong><ul><li><a href="#login">ログインとチャンネル</a></li><li><a href="#messages">投稿・返信・リアクション</a></li><li><a href="#updates">通知と既読</a></li><li><a href="#polls">アンケート</a></li><li><a href="#schedules">予定調整</a></li><li><a href="#account">アカウント</a></li><li><a href="#troubleshooting">困ったとき</a></li><li><a href="#aiを呼び出す">AIを呼び出す</a></li></ul></nav>
 <p>ブラウザで使う基本操作をまとめています。画面に表示される機能は、参加しているチャンネルや設定によって異なります。</p>
 <h2 id="login">ログインとチャンネル</h2>
 <ol>
@@ -59,6 +59,10 @@
 <li>新着が反映されない：左上の接続状態を確認し、再接続を待ちます。画面を再読み込みする場合は、入力中の文章を先に控えてください。</li>
 </ul>
 <p><a href="admin-manual.html">管理者向け操作マニュアル</a></p>
+<h2 id="aiを呼び出す">AIを呼び出す</h2>
+<p>管理者がAIを有効にすると、通常投稿とスレッド返信の入力欄にロボットボタンが表示されます。ボタンからAIを検索・選択し、質問や依頼を書いて送信してください。人へのメンションとは別のボタンです。</p>
+<p>通常投稿からはその投稿だけ、スレッドからは親投稿と呼び出しまでの返信をAIへ送ります。取り消された本文は除外します。回答はどちらも呼び出し元のスレッドにAI名とロボット印で表示されます。処理だけを行うAIは回答を投稿しない場合があります。</p>
+<p>失敗や送信上限超過はスレッドに理由を表示します。長いスレッドは、短い新規投稿に質問をまとめて呼び出してください。自動再送や再起動後の再開はありません。タイムアウトでも外部処理が実行済みの場合があるため、再度メンションする前に実行状況を確認してください。</p>
   <footer><a href="index.html">ドキュメント一覧へ戻る</a></footer>
 </main>
 </body>

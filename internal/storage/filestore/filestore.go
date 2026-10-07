@@ -922,6 +922,9 @@ func (s *FileStorage) indexMentionLocked(mention domain.Mention) {
 	s.mentionRecords[messageID] = mention
 	seenUsers, seenGroups := map[string]bool{}, map[string]bool{}
 	for _, match := range matches {
+		if match[1] == "ai" {
+			continue
+		}
 		if match[1] == "group" {
 			if !seenGroups[match[2]] {
 				seenGroups[match[2]] = true
@@ -934,7 +937,7 @@ func (s *FileStorage) indexMentionLocked(mention domain.Mention) {
 	}
 }
 
-var legacyMentionPattern = regexp.MustCompile(`(?:^|[[:space:]])@(?:(group):)?([A-Za-z0-9][A-Za-z0-9_-]{0,63})`)
+var legacyMentionPattern = regexp.MustCompile(`(?:^|[[:space:]])@(?:(group|ai):)?([A-Za-z0-9][A-Za-z0-9_-]{0,63})`)
 
 func (s *FileStorage) SetMentionRead(ctx context.Context, userID, messageID string, at time.Time) error {
 	if err := checkID("user", userID); err != nil {

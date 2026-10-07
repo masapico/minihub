@@ -61,6 +61,7 @@ type Channel struct {
 }
 
 type Message struct {
+	AI             *AIMessage         `json:"ai,omitempty"`
 	WithdrawnAt    *time.Time         `json:"withdrawnAt,omitempty"`
 	WithdrawnBy    string             `json:"withdrawnBy,omitempty"`
 	WithdrawnKind  string             `json:"withdrawnKind,omitempty"`
@@ -73,6 +74,16 @@ type Message struct {
 	MentionUserIDs []string           `json:"mentionUserIds,omitempty"`
 	ScheduleRef    *ScheduleReference `json:"scheduleRef,omitempty"`
 	PollRef        *PollReference     `json:"pollRef,omitempty"`
+}
+
+// AIMessage preserves attribution even after an account is removed from config.
+type AIMessage struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	RequestID        string `json:"requestId"`
+	TriggerMessageID string `json:"triggerMessageId"`
+	RequestedBy      string `json:"requestedBy"`
+	Kind             string `json:"kind"`
 }
 
 type Withdrawal struct {

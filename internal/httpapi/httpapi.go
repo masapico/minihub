@@ -181,6 +181,19 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.groupDirectory(w, r, userID)
 		return
 	}
+	if path == "api/ai-accounts" {
+		if r.Method != http.MethodGet {
+			a.methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		accounts, err := a.service.AIAccounts(r.Context(), userID)
+		if err != nil {
+			a.writeError(w, err)
+		} else {
+			a.writeJSON(w, http.StatusOK, accounts)
+		}
+		return
+	}
 	if path == "api/users" {
 		switch r.Method {
 		case http.MethodGet:

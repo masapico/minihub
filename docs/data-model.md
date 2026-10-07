@@ -211,7 +211,7 @@ erDiagram
 
 図の線は参照関係を示します。DB制約として宣言された外部キーは `mention_refs.message_id → messages.id` です。その他の参照はサービス層とストレージ処理で検証し、SQLの外部キー制約を示すものではありません。`users`・`groups`・`channels`・`sessions`・`schedules`・`polls` はバージョン付きJSONを1件ずつ保持します。`user_groups`、`channel_members`、`channel_groups`、`channel_managers` はそのJSONから作る**ビュー**であり、別の保存テーブルではありません。
 
-`messages` は `(channel_id, seq)` が主キーで `id` は全体で一意です。`messages` にはスレッド・時刻・投稿者の索引があります。`counters` は採番の正本で、将来履歴を消しても連番を再利用しないための表です。`reaction_events` と回答イベント表は履歴、`reactions` はリアクションの現在状態を持ちます。SQLiteスキーマは現行の `PRAGMA user_version=3` です。
+`messages` は `(channel_id, seq)` が主キーで `id` は全体で一意です。`messages` にはスレッド・時刻・投稿者の索引があります。`counters` は採番の正本で、将来履歴を消しても連番を再利用しないための表です。`reaction_events` と回答イベント表は履歴、`reactions` はリアクションの現在状態を持ちます。SQLiteスキーマは現行の `PRAGMA user_version=4` です。
 
 ## file方式の保存構成
 
@@ -231,3 +231,9 @@ flowchart TB
 ```
 
 file方式は小さなメタデータをJSONで置換し、メッセージと回答・リアクションの履歴をJSONLへ追記します。日付別メッセージファイルは時刻による分割であり、順序は `seq` で判断します。`state/{userId}.json` はユーザー単位の高水位を保持し、メッセージ×ユーザーの全組み合わせを作りません。未完了のJSONL末尾行は索引に含めません。
+
+## AI投稿
+
+AI回答・エラーは通常のスレッド返信として保存します。`userId`は`ai_<設定ID>`、任意項目`ai`は`id`、`name`、`requestId`、`triggerMessageId`、`requestedBy`、`kind`（`answer`または`error`）です。名前は保存時点の値を保持し、設定削除後も表示できます。人へのメンション通知先は空配列です。
+
+file方式はJSONLへ`ai`を追加し、SQLiteはスキーマv4でnullableなJSON文字列列`messages.ai`を追加します。旧データは`ai`なしで読み込み、依頼中の状態は永続化しません。詳細は[AI連携](ai.md)を参照してください。

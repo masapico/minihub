@@ -10,6 +10,7 @@ function closeThreadMention(restoreFocus = false) {
     if (picker?.presenceChannel) unwatchMentionPresence(picker.presenceChannel);
     $("threadMentionMenu").classList.add("hidden");
     $("threadMentionButton").setAttribute("aria-expanded", "false");
+    $("threadAIButton").setAttribute("aria-expanded", "false");
     $("threadMentionSearch").setAttribute("aria-expanded", "false");
     $("threadMentionOptions").replaceChildren();
     for (const id of ["threadInput", "threadMentionSearch"]) $(id).removeAttribute("aria-activedescendant");
@@ -32,7 +33,7 @@ function typedThreadMention() {
     return { range, query: match[1] };
 }
 
-function openThreadMentionPicker(mode = "button", typed = null) {
+function openThreadMentionPicker(mode = "button", typed = null, kind = "user") {
     if (!T.current || $("threadInput").disabled || threadMentionComposing) return;
     closeThreadMention();
     const input = $("threadInput");
@@ -43,7 +44,7 @@ function openThreadMentionPicker(mode = "button", typed = null) {
         range.collapse(false);
     }
     const picker = {
-        thread: T.current, mode,
+        thread: T.current, mode, kind,
         range,
         value: input.value, query: typed?.query || "",
         channel: null, loading: true, error: "", matches: [], active: 0,
@@ -51,6 +52,7 @@ function openThreadMentionPicker(mode = "button", typed = null) {
     threadMention = picker;
     $("threadMentionMenu").classList.remove("hidden");
     $("threadMentionButton").setAttribute("aria-expanded", "true");
+    $("threadAIButton").setAttribute("aria-expanded", String(kind === "ai"));
     $("threadMentionSearch").setAttribute("aria-expanded", "true");
     $("threadMentionSearch").value = picker.query;
     renderThreadMention(picker);
@@ -76,8 +78,10 @@ async function refreshThreadMention(picker) {
             return;
         }
         picker.channel = channel;
-        picker.presenceChannel = channel.id;
-        watchMentionPresence(channel.id);
+        if (picker.kind !== "ai") {
+            picker.presenceChannel = channel.id;
+            watchMentionPresence(channel.id);
+        }
     } catch (error) {
         if (threadMention !== picker || T.current !== picker.thread) return;
         picker.error = `参加者を取得できません: ${error.message}`;
@@ -93,11 +97,12 @@ function renderThreadMention(picker) {
     if (threadMention !== picker || picker.thread !== T.current) return;
     const host = $("threadMentionOptions");
     host.replaceChildren();
-    picker.matches = picker.channel ? channelMentionCandidates(picker.channel, picker.query) : [];
+    picker.matches = picker.channel ? picker.kind === "ai" ? aiCandidates(picker.query) : channelMentionCandidates(picker.channel, picker.query) : [];
     picker.active = Math.max(0, Math.min(picker.active, picker.matches.length - 1));
     $("threadMentionRetry").classList.toggle("hidden", !picker.error);
     host.setAttribute("aria-busy", String(picker.loading));
-    $("threadMentionStatus").textContent = picker.loading ? "参加者を読み込んでいます…" : picker.error ||
+    $("threadMentionStatus").textContent = picker.kind === "ai" && !picker.loading && !picker.error ?
+        `${picker.matches.length}件のAI候補 · ↑↓で選択、Enterで確定` : picker.loading ? "参加者を読み込んでいます…" : picker.error ||
         (picker.matches.length ? `${picker.matches.length}人の候補 · ↑↓で選択、Enterで確定` :
             picker.query ? "名前に一致する参加者はいません" : "メンションできる参加者はいません");
     for (const [index, user] of picker.matches.entries()) {
@@ -110,14 +115,16 @@ function renderThreadMention(picker) {
         const avatar = document.createElement("span"), copy = document.createElement("span"),
             name = document.createElement("b"), id = document.createElement("small");
         avatar.className = "mini";
-        avatar.textContent = ini(user.name);
+        avatar.textContent = picker.kind === "ai" ? "🤖" : ini(user.name);
         name.textContent = user.name;
         id.textContent = `@${user.id}`;
         copy.append(name, id);
         option.append(avatar, copy);
         option.dataset.userId = user.id;
-        option.dataset.presenceChannel = picker.channel.id;
-        updateMentionPresence(option);
+        if (picker.kind !== "ai") {
+            option.dataset.presenceChannel = picker.channel.id;
+            updateMentionPresence(option);
+        }
         // Preserve the editor selection; touch scrolling is left to the browser.
         option.addEventListener("mousedown", event => event.preventDefault());
         option.onclick = () => chooseThreadMention(picker, user);
@@ -183,9 +190,11 @@ function updateTypedThreadMention() {
     if (threadMentionComposing || !T.current || $("threadInput").disabled) return;
     const typed = typedThreadMention();
     if (!typed) { if (threadMention) closeThreadMention(); return; }
+    const kind = typed.query.startsWith("ai:") ? "ai" : "user";
+    if (kind === "ai") typed.query = typed.query.slice(3);
     const picker = threadMention;
-    if (!picker || picker.mode !== "typed" || picker.thread !== T.current) {
-        openThreadMentionPicker("typed", typed);
+    if (!picker || picker.mode !== "typed" || picker.thread !== T.current || picker.kind !== kind) {
+        openThreadMentionPicker("typed", typed, kind);
         return;
     }
     picker.range = typed.range;
@@ -230,6 +239,11 @@ $("threadMentionButton").onclick = () => {
     if (threadMention) closeThreadMention(true);
     else openThreadMentionPicker();
 };
+$("threadAIButton").addEventListener("mousedown", event => event.preventDefault());
+$("threadAIButton").onclick = () => {
+    if (threadMention?.kind === "ai") closeThreadMention(true);
+    else openThreadMentionPicker("button", null, "ai");
+};
 $("threadMentionSearch").oninput = () => {
     if (!threadMention || threadMentionComposing) return;
     threadMention.query = $("threadMentionSearch").value;
@@ -257,7 +271,7 @@ for (const id of ["threadInput", "threadMentionSearch"]) {
     });
 }
 document.addEventListener("pointerdown", event => {
-    if (!$("threadMentionMenu").contains(event.target) && event.target !== $("threadMentionButton") && event.target !== $("threadInput"))
+    if (!$("threadMentionMenu").contains(event.target) && !event.target.closest("#threadMentionButton, #threadAIButton") && event.target !== $("threadInput"))
         closeThreadMention();
 });
 $("threadForm").addEventListener("focusout", () => {

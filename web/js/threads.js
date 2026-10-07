@@ -52,6 +52,7 @@ function updateThreadControls() {
         $("threadSend").disabled = !canPost || T.current.sending || T.current.loading;
         $("threadInput").disabled = !canPost || T.current.loading || T.current.sending;
         $("threadMentionButton").disabled = $("threadInput").disabled;
+        $("threadAIButton").disabled = $("threadInput").disabled;
         if (!canPost || T.current.sending) {
             if (typeof closeThreadMention === "function") closeThreadMention();
         }
@@ -106,11 +107,11 @@ async function openThread(channel, root, around = null) {
 }
 function threadMessage(message) {
     const article = document.createElement("article");
-    article.className = "message" + (message.userId === S.me.id ? " mine" : "") + (mentionsMe(message.text) ? " mentioned" : "") + (message.withdrawnAt ? " withdrawn" : "");
+    article.className = "message" + (message.userId === S.me.id ? " mine" : "") + (mentionsMe(message.text, message.ai) ? " mentioned" : "") + (message.withdrawnAt ? " withdrawn" : "");
     article.dataset.seq = String(message.seq); article.tabIndex = -1;
     const head = document.createElement("div"), text = document.createElement("div");
     head.className = "head"; text.className = "text";
-    head.textContent = `${S.directory.get(message.userId) || message.userId}`;
+    head.textContent = messageAuthor(message);
     if (message.userId === S.me.id) {
         const mine = document.createElement("em");
         mine.className = "mine-label";

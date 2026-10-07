@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MiniHub AI</title><link rel="stylesheet" href="docs.css"></head><body><main>
+<h1 id="aiアカウントと外部api連携">AIアカウントと外部API連携</h1>
+<nav aria-label="&#30446;&#27425;"><ul><li><a href="#設定">設定</a></li><li><a href="#呼び出しと履歴">呼び出しと履歴</a></li><li><a href="#http契約-version-1">HTTP契約 version 1</a></li><li><a href="#実行・停止・保存">実行・停止・保存</a></li></ul></nav>
+<p>minihubは、明示的なAIメンションを含む投稿を保存した後に、管理者が設定したAPIへJSONをPOSTします。接続先APIがAIへの問い合わせや業務処理を実行し、minihubはHTTP応答の回答を呼び出し元投稿のスレッドへ保存します。</p>
+<h2 id="設定">設定</h2>
+<p><code>minihub.json</code>のトップレベルに<code>aiAccounts</code>を追加して再起動します。省略・空配列は無効です。</p>
+<pre><code>{
+  &quot;aiAccounts&quot;: [
+    {
+      &quot;id&quot;: &quot;assistant&quot;,
+      &quot;name&quot;: &quot;社内アシスタント&quot;,
+      &quot;enabled&quot;: true,
+      &quot;url&quot;: &quot;http://ai-server:8080/minihub&quot;,
+      &quot;timeout&quot;: &quot;120s&quot;,
+      &quot;tokenEnv&quot;: &quot;MINIHUB_AI_ASSISTANT_TOKEN&quot;
+    }
+  ]
+}</code></pre>
+<table><thead><tr><th>設定</th><th>内容</th></tr></thead><tbody>
+<tr><td><code>id</code></td><td>一意の英数字・<code>_</code>・<code>-</code>、先頭は英数字、1〜61文字</td></tr>
+<tr><td><code>name</code></td><td>空白のみを除く1〜100文字の表示名</td></tr>
+<tr><td><code>enabled</code></td><td>省略時<code>true</code>。<code>false</code>のAIは候補にも送信先にも含めない</td></tr>
+<tr><td><code>url</code></td><td>HTTP／HTTPSの絶対URL。URL内の認証情報・フラグメントは禁止</td></tr>
+<tr><td><code>timeout</code></td><td>依頼処理の制限時間。Goのduration形式。省略時<code>120s</code>、正の値</td></tr>
+<tr><td><code>tokenEnv</code></td><td>任意。環境変数名。値を<code>Authorization: Bearer &lt;値&gt;</code>として送信</td></tr>
+</tbody></table>
+<p>認証情報はminihubプロセスの実行環境に設定します。有効なAIに指定した環境変数が未設定・空の場合は起動できません。URLと認証情報はブラウザへ返しません。HTTPSの証明書は通常どおり検証し、リダイレクトは追跡しません。</p>
+<p>全チャンネルの投稿可能なユーザーがAIを利用できます。非公開チャンネルの内容も設定APIへ送信されます。接続先には、この利用範囲を前提としたAPIを指定してください。モデル固有のリクエスト変換、業務処理とその権限管理は接続先の責務です。</p>
+<h2 id="呼び出しと履歴">呼び出しと履歴</h2>
+<p>通常投稿・返信のロボットボタンでAIを選ぶと、<code>@ai:assistant（社内アシスタント）</code>が挿入されます。<code>@ai:assistant</code>を直接入力しても呼び出せます。人・グループへのメンションとは別です。同じ投稿で同じAIを複数回指定しても依頼は1件です。異なるAIを指定するとそれぞれへ送信します。</p>
+<p>通常投稿からは、その投稿だけを送信します。スレッド内からは、親投稿と呼び出し投稿までの返信を連番順で送信します。AIの過去の回答も含みます。取り消された投稿の本文は除外し、その後の新しい返信は含めません。本文はminihubの保存テキスト形式で、メンションや書式の記法を維持します。</p>
+<p>履歴は親投稿込み1,000件、依頼JSONはUTF-8で1 MiBまでです。取り消された投稿も件数上限の対象になります。上限超過時は一部を省略せず送信を中止し、短い新規投稿からの呼び出しを案内します。</p>
+<h2 id="http契約-version-1">HTTP契約 version 1</h2>
+<p><code>Content-Type: application/json</code>、<code>Accept: application/json</code>と依頼IDを示す<code>X-MiniHub-Request-ID</code>を設定してPOSTします。例のIDや時刻は説明用です。</p>
+<pre><code>{
+  &quot;version&quot;: 1,
+  &quot;requestId&quot;: &quot;&lt;128-bit-random-hex&gt;&quot;,
+  &quot;aiAccount&quot;: {&quot;id&quot;: &quot;assistant&quot;, &quot;name&quot;: &quot;社内アシスタント&quot;},
+  &quot;channel&quot;: {&quot;id&quot;: &quot;general&quot;, &quot;name&quot;: &quot;全社連絡&quot;, &quot;type&quot;: &quot;public&quot;},
+  &quot;requestedBy&quot;: {&quot;id&quot;: &quot;alice&quot;, &quot;name&quot;: &quot;Alice&quot;},
+  &quot;trigger&quot;: {&quot;id&quot;: &quot;&lt;message-id&gt;&quot;, &quot;seq&quot;: 123, &quot;threadRootSeq&quot;: 0},
+  &quot;messages&quot;: [
+    {
+      &quot;id&quot;: &quot;&lt;message-id&gt;&quot;,
+      &quot;seq&quot;: 123,
+      &quot;ts&quot;: &quot;2026-01-01T09:00:00+09:00&quot;,
+      &quot;author&quot;: {&quot;kind&quot;: &quot;user&quot;, &quot;id&quot;: &quot;alice&quot;, &quot;name&quot;: &quot;Alice&quot;},
+      &quot;text&quot;: &quot;@ai:assistant（社内アシスタント） この案を整理してください&quot;
+    }
+  ]
+}</code></pre>
+<p><code>author.kind</code>は<code>user</code>または<code>ai</code>です。AIの場合の<code>author.id</code>は設定IDです。<code>trigger.threadRootSeq</code>は通常投稿で<code>0</code>、返信で親投稿の連番です。</p>
+<table><thead><tr><th>応答</th><th>minihubの動作</th></tr></thead><tbody>
+<tr><td><code>200 application/json</code>、<code>{&quot;text&quot;:&quot;回答&quot;}</code></td><td>同じスレッドへAI名義で投稿</td></tr>
+<tr><td><code>200 application/json</code>、<code>{&quot;text&quot;:&quot;&quot;}</code>（空白のみも含む）</td><td>投稿せず完了</td></tr>
+<tr><td><code>204 No Content</code></td><td>投稿せず完了</td></tr>
+<tr><td>上記以外、不正JSON、<code>text</code>欠落・型違い、タイムアウト</td><td>同じスレッドへ定型エラーを投稿</td></tr>
+</tbody></table>
+<p>応答JSONは1 MiB、回答本文はUTF-8で16 KiB以内です。外部APIのエラー本文は表示・記録しません。AI回答は既存の安全な本文描画に従い、回答内の人・AIへのメンションは通知や追加実行を発生させません。</p>
+<h2 id="実行・停止・保存">実行・停止・保存</h2>
+<p>同時実行は全体で4件、待機は32件です。待機上限でも利用者の元投稿は保存され、AIへの依頼だけがエラーになります。回答は完了順に保存します。送信直前と回答保存直前に投稿権限と取り消し状態を確認し、権限喪失・アーカイブ・元投稿または親投稿の取り消しがある場合は中止します。</p>
+<p>依頼はメモリ上だけで管理します。停止時に実行中・待機中の依頼をキャンセルし、再起動後は再開しません。取り消した投稿の復元でも再実行しません。自動再送・ストリーミング・コールバックはありません。タイムアウトや停止でも外部側の処理が実行済みの場合があるため、再度呼び出す前に処理状況を確認してください。</p>
+<p>AIはログインユーザーとして登録しません。投稿の<code>userId</code>は<code>ai_&lt;設定ID&gt;</code>で、<code>ai_</code>は予約接頭辞です。AI有効化時に既存ユーザーにこの接頭辞があれば起動を拒否します。AI投稿には表示名、依頼ID、呼び出し投稿ID、依頼者ID、回答／エラーの種別を保存し、設定削除後も表示できます。取り消し・復元は管理者または権限を持つチャンネル管理者が行います。</p>
+<p>file方式はJSONLの任意項目<code>ai</code>、SQLiteはスキーマv4のnullableな<code>ai</code>列に保存します。既存SQLiteは起動時にv4へ更新します。更新前に停止してデータディレクトリ全体をバックアップしてください。旧バイナリへ戻す場合は更新前バックアップを使用します。AIメタデータは移行・復元・保存期間による削除でも通常投稿と一体で扱います。</p>
+<footer><a href="index.html">MiniHub</a></footer></main></body></html>

@@ -50,9 +50,15 @@ func (s *Service) threadRoot(ctx context.Context, userID, channelID string, root
 	return s.publicMessage(ctx, channelID, m)
 }
 func (s *Service) PostThreadMessage(ctx context.Context, userID, channelID string, root int64, text string) (domain.Message, error) {
+	var committed domain.Message
 	lock := s.channelLock("withdraw:message:" + channelID + ":" + strconv.FormatInt(root, 10))
 	lock.Lock()
-	defer lock.Unlock()
+	defer func() {
+		lock.Unlock()
+		if committed.ID != "" {
+			s.enqueueAI(userID, channelID, committed)
+		}
+	}()
 	if err := s.canPost(ctx, userID, channelID); err != nil {
 		return domain.Message{}, err
 	}
@@ -74,6 +80,7 @@ func (s *Service) PostThreadMessage(ctx context.Context, userID, channelID strin
 	if err != nil {
 		return m, err
 	}
+	committed = m
 	if publisher, ok := s.publisher.(ThreadPublisher); ok {
 		publisher.ThreadUpdated(ctx, channelID, root, m.Seq, userID)
 	}

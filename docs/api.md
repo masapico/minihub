@@ -122,3 +122,9 @@ WebSocketはメッセージ本文ではなく、次のような軽量な更新�
 APIは `GET /api/schedules?period=upcoming|past|all` で期間を選べ、省略時は全件です。
 
 接続が切れた場合、画面は2秒後に再接続し、現在表示しているチャネルの最終取得シーケンス以降を `nextAfter` がなくなるまで取得します。
+
+## AI連携API
+
+認証済みの`GET /api/ai-accounts`は有効なAIの`[{"id":"assistant","name":"社内アシスタント"}]`を返します。URLや認証情報は含みません。AIメンションは既存の通常投稿・スレッド投稿APIの`text`へ`@ai:<設定ID>`として指定します。投稿APIはAIの完了を待ちません。
+
+外部APIへの依頼・応答形式は[AI連携のHTTP契約](ai.md#http契約-version-1)を参照してください。回答は既存のスレッドAPIから取得でき、投稿の任意項目`ai`でAIのID・表示名、依頼ID、呼び出し投稿ID、依頼者ID、回答／エラーの種別を確認できます。

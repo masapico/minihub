@@ -131,6 +131,12 @@ func run() (runErr error) {
 	hub := realtime.New(sessions.Authenticate, svc.CanReadChannel, svc.CanPostChannel, logger)
 	hub.SetPresenceCandidates(svc.MentionCandidateIDs)
 	svc.SetMessagePublisher(hub)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := svc.StartAI(ctx, cfg.AIAccounts, logger); err != nil {
+		return err
+	}
+	defer svc.CloseAI()
 	mux := http.NewServeMux()
 	mux.Handle("/api/realtime", hub)
 	mux.Handle("/api/", httpapi.New(svc, sessions, logger))
@@ -142,8 +148,6 @@ func run() (runErr error) {
 		scheme = "https"
 	}
 	logger.Info("minihub listening", "scheme", scheme, "address", *addr, "basePath", *basePath, "data", *dataDir, "storage", cfg.Storage.Type)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	if runtime.GOOS == "windows" {
 		requested, closeEvent, err := shutdown.Listen(*dataDir)
 		if err != nil {

@@ -83,7 +83,7 @@ func Open(path string) (_ *Store, err error) {
 	if err = w.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return nil, err
 	}
-	if version != 0 && version != 1 && version != 2 && version != 3 {
+	if version < 0 || version > 4 {
 		return nil, fmt.Errorf("unsupported SQLite schema version %d", version)
 	}
 	var mode string
@@ -131,6 +131,22 @@ PRAGMA user_version=2;`); err != nil {
 		}
 		defer tx.Rollback()
 		if _, err = tx.Exec(`CREATE TABLE IF NOT EXISTS withdrawals(kind TEXT NOT NULL,channel_id TEXT NOT NULL,target_id TEXT NOT NULL,data TEXT NOT NULL CHECK(json_valid(data)),PRIMARY KEY(kind,channel_id,target_id)); PRAGMA user_version=3;`); err != nil {
+			return nil, err
+		}
+		if err = tx.Commit(); err != nil {
+			return nil, err
+		}
+	}
+	if version >= 1 && version <= 3 {
+		tx, e := w.Begin()
+		if e != nil {
+			return nil, e
+		}
+		defer tx.Rollback()
+		if _, err = tx.Exec("ALTER TABLE messages ADD COLUMN ai TEXT CHECK(ai IS NULL OR json_valid(ai))"); err != nil {
+			return nil, err
+		}
+		if _, err = tx.Exec("PRAGMA user_version=4"); err != nil {
 			return nil, err
 		}
 		if err = tx.Commit(); err != nil {
@@ -188,7 +204,7 @@ CREATE VIEW channel_managers AS SELECT c.id channel_id,j.value user_id FROM chan
 CREATE TABLE counters(kind TEXT NOT NULL,id TEXT NOT NULL,last_seq INTEGER NOT NULL CHECK(last_seq>=0),PRIMARY KEY(kind,id));
 CREATE TABLE messages(channel_id TEXT NOT NULL,seq INTEGER NOT NULL CHECK(seq>0),id TEXT NOT NULL UNIQUE,
  ts TEXT NOT NULL, ts_ns INTEGER NOT NULL,user_id TEXT NOT NULL,text TEXT NOT NULL,root INTEGER NOT NULL DEFAULT 0 CHECK(root>=0 AND root<seq),
- mention_ids TEXT, schedule_id TEXT,schedule_event TEXT,poll_id TEXT,
+ mention_ids TEXT, schedule_id TEXT,schedule_event TEXT,poll_id TEXT,ai TEXT CHECK(ai IS NULL OR json_valid(ai)),
  PRIMARY KEY(channel_id,seq),UNIQUE(channel_id,schedule_id,schedule_event));
 CREATE INDEX messages_thread ON messages(channel_id,root,seq,user_id,ts);
 CREATE INDEX messages_time ON messages(ts_ns);
@@ -206,7 +222,7 @@ CREATE TABLE poll_response_events(poll_id TEXT NOT NULL,seq INTEGER NOT NULL,use
 CREATE INDEX poll_response_latest ON poll_response_events(poll_id,user_id,seq DESC);
 CREATE TABLE migration_complete(id INTEGER PRIMARY KEY CHECK(id=1),manifest TEXT NOT NULL);
 CREATE TABLE withdrawals(kind TEXT NOT NULL,channel_id TEXT NOT NULL,target_id TEXT NOT NULL,data TEXT NOT NULL CHECK(json_valid(data)),PRIMARY KEY(kind,channel_id,target_id));
-PRAGMA user_version=3;
+PRAGMA user_version=4;
 `
 
 func get[T any](ctx context.Context, s *Store, table, id string) (*T, error) {

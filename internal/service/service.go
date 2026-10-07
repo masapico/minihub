@@ -119,6 +119,7 @@ type MessageReactions struct {
 }
 
 type Service struct {
+	ai                 *aiDispatcher
 	storage            storage.Storage
 	pollMu             sync.Mutex
 	mu                 sync.Mutex
@@ -510,7 +511,7 @@ func (s *Service) CreateUsers(ctx context.Context, actorID string, inputs []NewU
 	users := make([]domain.User, len(inputs))
 	for i, input := range inputs {
 		input.ID, input.Name = strings.TrimSpace(input.ID), strings.TrimSpace(input.Name)
-		if !validUserID.MatchString(input.ID) || input.Name == "" || utf8.RuneCountInString(input.Name) > 100 {
+		if !validUserID.MatchString(input.ID) || strings.HasPrefix(input.ID, "ai_") || input.Name == "" || utf8.RuneCountInString(input.Name) > 100 {
 			return nil, fmt.Errorf("%w: %d行目にはIDと100文字以内の名前が必要です", ErrInvalid, i+1)
 		}
 		if seen[input.ID] {
@@ -1131,6 +1132,7 @@ func (s *Service) PostMessage(ctx context.Context, userID, channelID, text strin
 	if s.publisher != nil {
 		s.publisher.NewMessage(ctx, channelID, message.Seq)
 	}
+	s.enqueueAI(userID, channelID, message)
 	if readErr != nil {
 		return message, &CommittedMessageError{Err: fmt.Errorf("advance author read state: %w", readErr)}
 	}
@@ -1144,7 +1146,7 @@ type CommittedMessageError struct{ Err error }
 func (e *CommittedMessageError) Error() string { return e.Err.Error() }
 func (e *CommittedMessageError) Unwrap() error { return e.Err }
 
-var mentionPattern = regexp.MustCompile(`(?:^|[[:space:]])@(?:(group):)?([A-Za-z0-9][A-Za-z0-9_-]{0,63})`)
+var mentionPattern = regexp.MustCompile(`(?:^|[[:space:]])@(?:(group|ai):)?([A-Za-z0-9][A-Za-z0-9_-]{0,63})`)
 
 func (s *Service) mentionRecipients(ctx context.Context, authorID, channelID, text string) ([]string, error) {
 	users, err := s.storage.ListUsers(ctx)
@@ -1157,6 +1159,9 @@ func (s *Service) mentionRecipients(ctx context.Context, authorID, channelID, te
 	}
 	wantedUsers, wantedGroups := map[string]bool{}, map[string]bool{}
 	for _, match := range mentionPattern.FindAllStringSubmatch(text, -1) {
+		if match[1] == "ai" {
+			continue
+		}
 		if match[1] == "group" {
 			wantedGroups[match[2]] = true
 		} else {

@@ -16,15 +16,15 @@ import (
 	"time"
 )
 
-const messageColumns = `seq,id,ts,user_id,text,root,mention_ids,schedule_id,schedule_event,poll_id`
+const messageColumns = `seq,id,ts,user_id,text,root,mention_ids,schedule_id,schedule_event,poll_id,ai`
 
 type scanner interface{ Scan(...any) error }
 
 func scanMessage(row scanner) (domain.Message, error) {
 	var m domain.Message
 	var ts string
-	var mentions, sch, event, poll sql.NullString
-	err := row.Scan(&m.Seq, &m.ID, &ts, &m.UserID, &m.Text, &m.ThreadRootSeq, &mentions, &sch, &event, &poll)
+	var mentions, sch, event, poll, ai sql.NullString
+	err := row.Scan(&m.Seq, &m.ID, &ts, &m.UserID, &m.Text, &m.ThreadRootSeq, &mentions, &sch, &event, &poll, &ai)
 	if err != nil {
 		return m, missing(err)
 	}
@@ -43,10 +43,15 @@ func scanMessage(row scanner) (domain.Message, error) {
 	if poll.Valid {
 		m.PollRef = &domain.PollReference{ID: poll.String}
 	}
+	if ai.Valid {
+		if err = json.Unmarshal([]byte(ai.String), &m.AI); err != nil {
+			return m, err
+		}
+	}
 	return m, nil
 }
 
-var legacyMention = regexp.MustCompile(`(?:^|[[:space:]])@(?:(group):)?([A-Za-z0-9][A-Za-z0-9_-]{0,63})`)
+var legacyMention = regexp.MustCompile(`(?:^|[[:space:]])@(?:(group|ai):)?([A-Za-z0-9][A-Za-z0-9_-]{0,63})`)
 
 func insertMessage(ctx context.Context, tx *sql.Tx, ch string, m domain.Message) error {
 	if err := checkIDs(ch, m.UserID, m.ID); err != nil {
@@ -55,7 +60,14 @@ func insertMessage(ctx context.Context, tx *sql.Tx, ch string, m domain.Message)
 	if m.Seq < 1 || m.Text == "" || m.Timestamp.IsZero() || m.ThreadRootSeq < 0 || m.ThreadRootSeq >= m.Seq {
 		return errors.New("invalid message")
 	}
-	var mentions, sch, event, poll any
+	var mentions, sch, event, poll, ai any
+	if m.AI != nil {
+		b, err := json.Marshal(m.AI)
+		if err != nil {
+			return err
+		}
+		ai = string(b)
+	}
 	if m.MentionUserIDs != nil {
 		b, err := json.Marshal(m.MentionUserIDs)
 		if err != nil {
@@ -79,7 +91,7 @@ func insertMessage(ctx context.Context, tx *sql.Tx, ch string, m domain.Message)
 		}
 		poll = m.PollRef.ID
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO messages(channel_id,seq,id,ts,ts_ns,user_id,text,root,mention_ids,schedule_id,schedule_event,poll_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, ch, m.Seq, m.ID, m.Timestamp.Format(time.RFC3339Nano), m.Timestamp.UnixNano(), m.UserID, m.Text, m.ThreadRootSeq, mentions, sch, event, poll)
+	_, err := tx.ExecContext(ctx, `INSERT INTO messages(channel_id,seq,id,ts,ts_ns,user_id,text,root,mention_ids,schedule_id,schedule_event,poll_id,ai) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, ch, m.Seq, m.ID, m.Timestamp.Format(time.RFC3339Nano), m.Timestamp.UnixNano(), m.UserID, m.Text, m.ThreadRootSeq, mentions, sch, event, poll, ai)
 	if err != nil {
 		return err
 	}
@@ -93,6 +105,9 @@ func insertMessage(ctx context.Context, tx *sql.Tx, ch string, m domain.Message)
 		}
 	} else {
 		for _, v := range legacyMention.FindAllStringSubmatch(m.Text, -1) {
+			if v[1] == "ai" {
+				continue
+			}
 			kind := "legacy_user"
 			if v[1] == "group" {
 				kind = "legacy_group"

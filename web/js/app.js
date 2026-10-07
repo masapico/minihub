@@ -7,6 +7,7 @@ const S = {
         ws: null,
         unread: new Map(),
         groups: new Map(),
+		aiAccounts: [],
     },
     $ = (x) => document.getElementById(x),
     nameSegmenter = typeof Intl.Segmenter === "function"
@@ -32,6 +33,16 @@ function messageDisplayText(message) {
     return message.pollRef && message.text.startsWith(legacyPollPrefix)
         ? "アンケートを開始しました: " + message.text.slice(legacyPollPrefix.length)
         : message.text;
+}
+
+function messageAuthor(message) {
+    return message.ai ? `🤖 ${message.ai.name}` : S.directory?.get(message.userId) || message.userId;
+}
+
+function aiCandidates(query = "") {
+    const normalized = query.trim().toLocaleLowerCase("ja-JP");
+    return S.aiAccounts.filter(a => !normalized || `${a.id} ${a.name}`.toLocaleLowerCase("ja-JP").includes(normalized))
+        .map(a => ({id: `ai:${a.id}`, name: a.name}));
 }
 
 function withdrawnNotice(message) {
@@ -385,15 +396,16 @@ function appendInlineMarkup(root, text, editable = false) {
                 continue;
             }
         }
-        const mention = text.slice(i).match(/^@(?:(group):)?([A-Za-z0-9][A-Za-z0-9_-]{0,63})(?:（([^\n）]*)）)?/);
+        const mention = text.slice(i).match(/^@(?:(group|ai):)?([A-Za-z0-9][A-Za-z0-9_-]{0,63})(?:（([^\n）]*)）)?/);
         if (mention) {
             flush();
             const isGroup = mention[1] === "group",
+                isAI = mention[1] === "ai",
                 id = mention[2],
                 span = document.createElement("span");
-            span.className = "mention" + (isGroup ? S.me?.groups?.includes(id) ? " me" : "" : id === S.me?.id ? " me" : "");
-            span.textContent = "@" + (isGroup ? S.groups?.get(id) || mention[3] || id : S.directory?.get(id) || mention[3] || id);
-            span.title = "@" + (isGroup ? "group:" : "") + id;
+            span.className = "mention" + (isAI ? "" : isGroup ? S.me?.groups?.includes(id) ? " me" : "" : id === S.me?.id ? " me" : "");
+            span.textContent = (isAI ? "🤖 @" : "@") + (isAI ? S.aiAccounts.find(a => a.id === id)?.name || mention[3] || id : isGroup ? S.groups?.get(id) || mention[3] || id : S.directory?.get(id) || mention[3] || id);
+            span.title = "@" + (isAI ? "ai:" : isGroup ? "group:" : "") + id;
             if (editable) {
                 span.contentEditable = "false";
                 span.dataset.mentionToken = mention[0];
@@ -522,7 +534,7 @@ function syncEditorState() {
     $("editorLimit").textContent = over ? `${bytes.toLocaleString()} / ${MAX_MESSAGE_BYTES.toLocaleString()} bytes` : "";
     editor.setAttribute("aria-invalid", String(over));
     $("send").disabled = editor.disabled || over;
-    for (const button of document.querySelectorAll(".composer .tools [data-format], #linkButton, #mentionButton"))
+    for (const button of document.querySelectorAll(".composer .tools [data-format], #linkButton, #mentionButton, #aiButton"))
         button.disabled = editor.disabled;
 }
 
@@ -714,8 +726,8 @@ document.querySelector(".tools").addEventListener("mousedown", (event) => {
     if (event.target.closest("button")) event.preventDefault();
 });
 editor.addEventListener("input", syncEditorState);
-editor.addEventListener("keyup", updateFormatButtons);
-editor.addEventListener("mouseup", updateFormatButtons);
+editor.addEventListener("keyup", () => updateFormatButtons());
+editor.addEventListener("mouseup", () => updateFormatButtons());
 editor.addEventListener("paste", (event) => {
     event.preventDefault();
     document.execCommand("insertText", false, event.clipboardData.getData("text/plain"));
@@ -2347,6 +2359,17 @@ mentionWrap.className = "mention-wrap";
 mentionWrap.innerHTML =
     '<button type="button" class="fmt" id="mentionButton" title="メンションを追加" aria-label="メンションを追加">@</button><div class="mention-menu hidden" id="mentionMenu"><div class="mention-search"><input id="mentionSearch" type="search" placeholder="名前またはIDで検索" autocomplete="off" aria-label="メンション候補を検索"></div><div class="mention-options" id="mentionOptions"></div></div>';
 document.querySelector(".composer .tools .dropdown").after(mentionWrap);
+const aiButton = document.createElement("button");
+aiButton.type = "button";
+aiButton.id = "aiButton";
+aiButton.className = "fmt hidden";
+aiButton.innerHTML = icon("robot");
+aiButton.title = "AIを呼び出す";
+aiButton.setAttribute("aria-label", "AIを呼び出す");
+aiButton.setAttribute("aria-controls", "mentionMenu");
+aiButton.setAttribute("aria-expanded", "false");
+mentionWrap.insertBefore(aiButton, $("mentionMenu"));
+aiButton.addEventListener("mousedown", event => event.preventDefault());
 S.mentionRange = null;
 // Both composers use the same participant filtering; insertion stays editor-specific.
 function channelMentionCandidates(channel, query = "") {
@@ -2404,6 +2427,7 @@ function openMainMentionPresence() {
 }
 function closeMainMentionMenu() {
     $("mentionMenu").classList.add("hidden");
+    $("aiButton").setAttribute("aria-expanded", "false");
     unwatchMentionPresence(S.mainMentionChannel);
     S.mainMentionChannel = null;
 }
@@ -2415,6 +2439,22 @@ function mentionToken(id, name) {
 function renderMentionMenu(query = "") {
     const options = $("mentionOptions");
     options.replaceChildren();
+    if (S.mentionKind === "ai") {
+        for (const a of aiCandidates(query)) {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "mention-option";
+            const name = document.createElement("b"), id = document.createElement("small");
+            name.textContent = `🤖 ${a.name}`;
+            id.textContent = `@${a.id}`;
+            option.append(name, id);
+            option.addEventListener("mousedown", event => event.preventDefault());
+            option.onclick = () => { insertMention(a.id, a.name); closeMainMentionMenu(); };
+            options.append(option);
+        }
+        if (!options.children.length) options.textContent = "一致するAIはありません";
+        return;
+    }
     const normalized = query.trim().toLocaleLowerCase("ja-JP");
     for (const groupID of S.channel?.groups || []) {
         const name = S.groups.get(groupID) || groupID;
@@ -2480,21 +2520,41 @@ function insertMention(id, name) {
     editor.focus();
     editor.dispatchEvent(new Event("input", { bubbles: true }));
 }
-$("mentionButton").onclick = () => {
+function openMainMention(kind) {
+    if (editor.disabled) return;
     const menu = $("mentionMenu"),
-        opening = menu.classList.contains("hidden");
-    menu.classList.toggle("hidden");
+        opening = menu.classList.contains("hidden") || S.mentionKind !== kind;
+    closeMainMentionMenu();
+    S.mentionKind = kind;
     if (opening) {
-        openMainMentionPresence();
+        menu.classList.remove("hidden");
+        if (kind !== "ai") openMainMentionPresence();
+        $("aiButton").setAttribute("aria-expanded", String(kind === "ai"));
         S.mentionRange = currentEditorRange();
         $("mentionSearch").value = "";
         renderMentionMenu();
         requestAnimationFrame(() => $("mentionSearch").focus());
     }
     else closeMainMentionMenu();
-};
+}
+$("mentionButton").onclick = () => openMainMention("user");
+aiButton.onclick = () => openMainMention("ai");
 $("mentionSearch").oninput = (event) =>
     renderMentionMenu(event.target.value);
+$("mentionSearch").addEventListener("keydown", event => {
+    if (event.isComposing) return;
+    if (event.key === "ArrowDown") { $("mentionOptions").querySelector("button")?.focus(); event.preventDefault(); }
+    if (event.key === "Escape") { closeMainMentionMenu(); editor.focus(); }
+});
+$("mentionOptions").addEventListener("keydown", event => {
+    const buttons = [...$("mentionOptions").querySelectorAll("button")];
+    const index = buttons.indexOf(document.activeElement);
+    if (["ArrowUp", "ArrowDown"].includes(event.key)) {
+        event.preventDefault();
+        buttons[(index + (event.key === "ArrowDown" ? 1 : buttons.length - 1)) % buttons.length]?.focus();
+    }
+    if (event.key === "Escape") { closeMainMentionMenu(); editor.focus(); }
+});
 function currentEditorRange() {
     return currentRichEditorRange(editor);
 }
@@ -2521,10 +2581,12 @@ $("input").addEventListener("input", () => {
     if (!range) return;
     range.setStart(range.endContainer, Math.max(0, range.endOffset - match[1].length - 1));
     S.mentionRange = range;
-    $("mentionSearch").value = match[1];
-    renderMentionMenu(match[1]);
+    S.mentionKind = match[1].startsWith("ai:") ? "ai" : "user";
+    const query = S.mentionKind === "ai" ? match[1].slice(3) : match[1];
+    $("mentionSearch").value = query;
+    renderMentionMenu(query);
     $("mentionMenu").classList.remove("hidden");
-    openMainMentionPresence();
+    if (S.mentionKind !== "ai") openMainMentionPresence();
 });
 $("input").addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -2633,11 +2695,11 @@ $("unlinkButton").onclick = () => {
     linkModal.hide();
 };
 
-const mentionsMe = (text) =>
+const mentionsMe = (text, ai = null) => !ai && (
     new RegExp(`(^|\\s)@${S.me?.id}(?=\\s|$|[.,!?。、！？（])`).test(text) ||
     (S.me?.groups || []).some((id) =>
         new RegExp(`(^|\\s)@group:${id}(?=\\s|$|[.,!?。、！？（])`).test(text),
-    );
+    ));
 
 function scheduleReference(ref, messageText = "", withdrawn = false) {
     if (!ref || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(ref.id))
@@ -2679,6 +2741,9 @@ loadChannels = async function () {
         S.directory = new Map(
             users.map((user) => [user.id, user.name]),
         );
+        S.aiAccounts = await api("/api/ai-accounts").catch(error => { note(`AI一覧を取得できません: ${error.message}`, true); return []; });
+        $("aiButton").classList.toggle("hidden", !S.aiAccounts.length);
+        $("threadAIButton").classList.toggle("hidden", !S.aiAccounts.length);
     }
     const [channels, readResult] = await Promise.all([
         api("/api/channels"),
@@ -3137,7 +3202,7 @@ render = function () {
             "message" +
 			(m.withdrawnAt ? " withdrawn" : "") +
             (m.userId === S.me.id ? " mine" : "") +
-            (mentionsMe(m.text) ? " mentioned" : "") +
+            (mentionsMe(m.text, m.ai) ? " mentioned" : "") +
             (messageIsHighlighted(S.channel?.id, m.seq)
                 ? " notification-target"
                 : "");
@@ -3145,7 +3210,7 @@ render = function () {
         article.tabIndex = -1;
         article.innerHTML =
             '<div><div class="head"><span></span><i class="time"></i><i class="seq"></i></div><div class="text"></div></div>';
-        const author = S.directory.get(m.userId) || m.userId;
+        const author = messageAuthor(m);
         article.querySelector(".head span").textContent = author;
         if (m.userId === S.me.id) {
             const mine = document.createElement("em");
@@ -3261,7 +3326,7 @@ catchup = async function () {
             incoming.some(
                 (message) =>
                     message.userId !== S.me.id &&
-                    mentionsMe(message.text),
+                    mentionsMe(message.text, message.ai),
             )
         )
             note("あなた宛てのメンションがあります");
@@ -3475,7 +3540,7 @@ realtime = function () {
             );
             const posted = page.messages.find((item) => item.seq === message.seq);
             if (!posted) return;
-            const mentioned = posted.mentionUserIds?.includes(S.me.id) || mentionsMe(posted.text);
+            const mentioned = posted.mentionUserIds?.includes(S.me.id) || mentionsMe(posted.text, posted.ai);
             if (!selected && mentioned)
                 note(
                     `${channel?.name || message.channelId} であなた宛てのメンションがあります`,
