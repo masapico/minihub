@@ -297,8 +297,9 @@ func TestAIMultipleAccountsAndBearer(t *testing.T) {
 			t.Error(err)
 		}
 		id := body["aiAccount"].(map[string]any)["id"].(string)
-		if id == "helper" && r.Header.Get("Authorization") != "Bearer fake-test-token" {
-			t.Error("Bearer authentication missing")
+		wantAuth := map[string]string{"helper": "Bearer direct-test-token", "reviewer": "Bearer fake-test-token", "observer": ""}
+		if r.Header.Get("Authorization") != wantAuth[id] {
+			t.Errorf("incorrect Bearer authentication for %s", id)
 		}
 		requests <- id
 		w.Header().Set("Content-Type", "application/json")
@@ -309,8 +310,9 @@ func TestAIMultipleAccountsAndBearer(t *testing.T) {
 	svc := setup(t)
 	disabled := false
 	if err := svc.StartAI(context.Background(), []config.AIAccount{
-		{ID: "helper", Name: "Helper", URL: server.URL, TokenEnv: "MINIHUB_AI_MULTI_TEST_TOKEN"},
-		{ID: "reviewer", Name: "Reviewer", URL: server.URL},
+		{ID: "helper", Name: "Helper", URL: server.URL, Token: "direct-test-token"},
+		{ID: "reviewer", Name: "Reviewer", URL: server.URL, TokenEnv: "MINIHUB_AI_MULTI_TEST_TOKEN"},
+		{ID: "observer", Name: "Observer", URL: server.URL},
 		{ID: "disabled", Name: "Disabled", URL: server.URL, Enabled: &disabled},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatal(err)
@@ -320,12 +322,12 @@ func TestAIMultipleAccountsAndBearer(t *testing.T) {
 	if _, err := svc.CreateChannel(ctx, "admin", domain.Channel{ID: "general", Name: "General", Type: domain.ChannelPublic, Members: []string{"alice"}}); err != nil {
 		t.Fatal(err)
 	}
-	root, err := svc.PostMessage(ctx, "alice", "general", "@ai:helper @ai:reviewer @ai:helper @ai:disabled @ai:unknown")
+	root, err := svc.PostMessage(ctx, "alice", "general", "@ai:helper @ai:reviewer @ai:observer @ai:helper @ai:disabled @ai:unknown")
 	if err != nil {
 		t.Fatal(err)
 	}
 	seen := map[string]bool{}
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		select {
 		case id := <-requests:
 			if seen[id] {
@@ -336,7 +338,7 @@ func TestAIMultipleAccountsAndBearer(t *testing.T) {
 			t.Fatal("missing request")
 		}
 	}
-	if !seen["helper"] || !seen["reviewer"] {
+	if !seen["helper"] || !seen["reviewer"] || !seen["observer"] {
 		t.Fatal(seen)
 	}
 	awaitAIReply(t, svc, root.Seq)

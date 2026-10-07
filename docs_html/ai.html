@@ -13,7 +13,7 @@
       &quot;enabled&quot;: true,
       &quot;url&quot;: &quot;http://ai-server:8080/minihub&quot;,
       &quot;timeout&quot;: &quot;120s&quot;,
-      &quot;tokenEnv&quot;: &quot;MINIHUB_AI_ASSISTANT_TOKEN&quot;
+      &quot;token&quot;: &quot;YOUR-AI-TOKEN&quot;
     }
   ]
 }</code></pre>
@@ -23,9 +23,10 @@
 <tr><td><code>enabled</code></td><td>省略時<code>true</code>。<code>false</code>のAIは候補にも送信先にも含めない</td></tr>
 <tr><td><code>url</code></td><td>HTTP／HTTPSの絶対URL。URL内の認証情報・フラグメントは禁止</td></tr>
 <tr><td><code>timeout</code></td><td>依頼処理の制限時間。Goのduration形式。省略時<code>120s</code>、正の値</td></tr>
-<tr><td><code>tokenEnv</code></td><td>任意。環境変数名。値を<code>Authorization: Bearer &lt;値&gt;</code>として送信</td></tr>
+<tr><td><code>token</code></td><td>任意。Bearerトークンを直接記載。<code>Bearer </code>は付けず、値を<code>Authorization: Bearer &lt;値&gt;</code>として送信。空文字・省略時は認証なし</td></tr>
+<tr><td><code>tokenEnv</code></td><td>既存設定との互換用。トークンを格納した環境変数名。<code>token</code>との同時指定は不可</td></tr>
 </tbody></table>
-<p>認証情報はminihubプロセスの実行環境に設定します。有効なAIに指定した環境変数が未設定・空の場合は起動できません。URLと認証情報はブラウザへ返しません。HTTPSの証明書は通常どおり検証し、リダイレクトは追跡しません。</p>
+<p>認証が必要な場合は、<code>token</code>にトークンを直接記載します。空白のみや改行を含む値は指定できません。設定ファイルはGit管理せず、管理者と実行アカウントだけが読み取れる権限にしてください。Windows以外では、<code>token</code>を含む設定ファイルに<code>chmod 600 minihub.json</code>を適用します。既存の<code>tokenEnv</code>も利用でき、有効なAIに指定した環境変数が未設定・空の場合は起動できません。<code>token</code>と<code>tokenEnv</code>の両方に空でない値を指定すると設定エラーになります。URLと認証情報はブラウザへ返しません。HTTPSの証明書は通常どおり検証し、リダイレクトは追跡しません。</p>
 <p>全チャンネルの投稿可能なユーザーがAIを利用できます。非公開チャンネルの内容も設定APIへ送信されます。接続先には、この利用範囲を前提としたAPIを指定してください。モデル固有のリクエスト変換、業務処理とその権限管理は接続先の責務です。</p>
 <h2 id="呼び出しと履歴">呼び出しと履歴</h2>
 <p>通常投稿・返信のロボットボタンでAIを選ぶと、<code>@ai:assistant（社内アシスタント）</code>が挿入されます。<code>@ai:assistant</code>を直接入力しても呼び出せます。人・グループへのメンションとは別です。同じ投稿で同じAIを複数回指定しても依頼は1件です。異なるAIを指定するとそれぞれへ送信します。</p>

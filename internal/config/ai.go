@@ -16,6 +16,7 @@ type AIAccount struct {
 	Enabled  *bool  `json:"enabled,omitempty"`
 	URL      string `json:"url"`
 	Timeout  string `json:"timeout,omitempty"`
+	Token    string `json:"token,omitempty"`
 	TokenEnv string `json:"tokenEnv,omitempty"`
 }
 
@@ -48,6 +49,12 @@ func ValidateAIAccounts(accounts []AIAccount) error {
 			if d, err := time.ParseDuration(a.Timeout); err != nil || d <= 0 {
 				return fmt.Errorf("aiAccounts %s: timeout must be positive", a.ID)
 			}
+		}
+		if a.Token != "" && a.TokenEnv != "" {
+			return fmt.Errorf("aiAccounts %s: token and tokenEnv cannot both be set", a.ID)
+		}
+		if a.Token != "" && (strings.TrimSpace(a.Token) == "" || strings.ContainsAny(a.Token, "\r\n")) {
+			return fmt.Errorf("aiAccounts %s: token must not be blank or contain line breaks", a.ID)
 		}
 		if a.IsEnabled() && a.TokenEnv != "" && strings.TrimSpace(os.Getenv(a.TokenEnv)) == "" {
 			return fmt.Errorf("aiAccounts %s: token environment variable is missing", a.ID)

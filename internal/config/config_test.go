@@ -139,19 +139,29 @@ func TestRetentionDaysValidation(t *testing.T) {
 	}
 }
 
-func TestPlainInitialPasswordRequiresPrivatePermissions(t *testing.T) {
+func TestPlainCredentialsRequirePrivatePermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX file permissions are not enforced on Windows")
 	}
-	path := filepath.Join(t.TempDir(), "minihub.json")
-	body := `{"version":1,"initialAdmin":{"id":"admin","name":"Admin","password":"password"}}`
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(path, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := Load(path, true); err == nil {
-		t.Fatal("insecure config permissions accepted")
+	for _, body := range []string{
+		`{"version":1,"initialAdmin":{"id":"admin","name":"Admin","password":"password"}}`,
+		`{"aiAccounts":[{"id":"helper","name":"Helper","url":"http://localhost/ai","token":"direct-test-token"}]}`,
+	} {
+		path := filepath.Join(t.TempDir(), "minihub.json")
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := Load(path, true); err == nil {
+			t.Fatal("insecure config permissions accepted")
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := Load(path, true); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

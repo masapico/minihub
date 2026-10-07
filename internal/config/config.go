@@ -163,10 +163,20 @@ func Load(path string, explicit bool) (Config, bool, error) {
 	if cfg.Features.NetworkPathMode != "disabled" && cfg.Features.NetworkPathMode != "copy" && cfg.Features.NetworkPathMode != "open-and-copy" {
 		return cfg, false, errors.New("features.networkPathMode must be disabled, copy, or open-and-copy")
 	}
+	secretField := ""
 	if cfg.InitialAdmin != nil && cfg.InitialAdmin.Password != "" {
+		secretField = "initialAdmin.password"
+	}
+	for _, a := range cfg.AIAccounts {
+		if a.Token != "" {
+			secretField = "aiAccounts.token"
+			break
+		}
+	}
+	if secretField != "" {
 		if runtime.GOOS != "windows" {
 			if info, statErr := os.Stat(path); statErr == nil && info.Mode().Perm()&0o077 != 0 {
-				return cfg, false, errors.New("config containing initialAdmin.password must have permissions 0600")
+				return cfg, false, fmt.Errorf("config containing %s must have permissions 0600", secretField)
 			}
 		}
 	}

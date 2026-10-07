@@ -63,7 +63,11 @@ func (s *Service) StartAI(ctx context.Context, accounts []config.AIAccount, logg
 	active := []aiEndpoint{}
 	for _, a := range accounts {
 		if a.IsEnabled() {
-			active = append(active, aiEndpoint{a, os.Getenv(a.TokenEnv)})
+			token := a.Token
+			if a.TokenEnv != "" {
+				token = os.Getenv(a.TokenEnv)
+			}
+			active = append(active, aiEndpoint{a, token})
 		}
 	}
 	if len(active) == 0 {

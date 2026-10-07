@@ -28,7 +28,8 @@ func TestAIAccountsHTTPDirectory(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	disabled := false
 	if err := svc.StartAI(context.Background(), []config.AIAccount{
-		{ID: "helper", Name: "社内AI", URL: "http://private-ai-host/secret-route", TokenEnv: "MINIHUB_AI_DIRECTORY_TEST"},
+		{ID: "helper", Name: "社内AI", URL: "http://private-ai-host/secret-route", Token: "direct-private-token"},
+		{ID: "legacy", Name: "Legacy AI", URL: "http://private-ai-host/secret-route", TokenEnv: "MINIHUB_AI_DIRECTORY_TEST"},
 		{ID: "disabled", Name: "停止AI", URL: "http://private-ai-host/", Enabled: &disabled},
 	}, logger); err != nil {
 		t.Fatal(err)
@@ -36,10 +37,10 @@ func TestAIAccountsHTTPDirectory(t *testing.T) {
 	t.Cleanup(svc.CloseAI)
 	handler := httpapi.New(svc, httpapi.HeaderAuthenticator{}, logger)
 	got := request(t, handler, http.MethodGet, "/api/ai-accounts", "alice", nil)
-	if got.Code != 200 || got.Body.String() != "[{\"id\":\"helper\",\"name\":\"社内AI\"}]\n" {
+	if got.Code != 200 || got.Body.String() != "[{\"id\":\"helper\",\"name\":\"社内AI\"},{\"id\":\"legacy\",\"name\":\"Legacy AI\"}]\n" {
 		t.Fatalf("directory: %d %s", got.Code, got.Body.String())
 	}
-	for _, secret := range []string{"private-token", "private-ai-host", "secret-route", "tokenEnv", "disabled"} {
+	for _, secret := range []string{"private-token", "private-ai-host", "secret-route", "token", "disabled"} {
 		if strings.Contains(got.Body.String(), secret) {
 			t.Fatalf("leaked %s", secret)
 		}

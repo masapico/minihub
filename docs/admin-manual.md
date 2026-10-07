@@ -278,11 +278,13 @@ Windowsでは [backup.bat](../scripts/backup.bat) でサーバーの停止とZIP
   "enabled": true,
   "url": "http://ai-server:8080/minihub",
   "timeout": "120s",
-  "tokenEnv": "MINIHUB_AI_ASSISTANT_TOKEN"
+  "token": "YOUR-AI-TOKEN"
 }]
 ```
 
-`id`・`name`・`url`は必須、`enabled`の既定値は`true`、`timeout`は`120s`です。認証不要なら`tokenEnv`を省略します。指定した環境変数にBearerトークンを設定してminihubを起動してください。設定変更は再起動で反映します。URLと認証情報はブラウザに公開しません。
+`id`・`name`・`url`は必須、`enabled`の既定値は`true`、`timeout`は`120s`です。`token`にBearerトークンを直接記載します（`Bearer `は付けません）。認証不要なら省略または空文字にします。空白のみや改行を含む値は指定できません。既存の環境変数名を指定する`tokenEnv`も利用できますが、`token`との両方に空でない値は指定できません。設定変更は再起動で反映します。URLと認証情報はブラウザに公開しません。
+
+トークンを含む実設定はGit管理せず、管理者と実行アカウントだけが読み取れる権限にしてください。Windowsではファイルの「プロパティ」→「セキュリティ」でアクセス権を設定します。Windows以外では`chmod 600 minihub.json`を適用します。
 
 全チャンネルで投稿可能なユーザーが利用でき、非公開チャンネルの内容も設定先へ送信されます。通常投稿からはその投稿のみ、スレッドからは親投稿と呼び出しまでの返信を送信します。上限は親投稿込み1,000件・依頼JSON 1 MiBです。回答本文は16 KiB以内です。
 
