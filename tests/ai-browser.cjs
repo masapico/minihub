@@ -1,5 +1,5 @@
 // NODE_PATH must point to Playwright; BROWSER_PATH can select Chromium/Edge.
-// node tests/ai-browser.cjs <executable> [--sqlite] [--disabled]
+// node tests/ai-browser.cjs <executable> [--sqlite] [--disabled] [--update-screenshot]
 const {chromium} = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -16,9 +16,14 @@ const {spawn} = require('node:child_process');
     const ai = http.createServer(async (req, res) => {
         let body = '';
         for await (const chunk of req) body += chunk;
+        assert.equal(req.url, '/v1/chat/completions');
+        assert.equal(req.method, 'POST');
+        assert.match(req.headers['x-minihub-request-id'], /^[0-9a-f]{32}$/);
         calls.push(JSON.parse(body));
+        assert.equal(calls.at(-1).model, 'local-model');
+        assert.equal(calls.at(-1).stream, false);
         res.writeHead(200, {'Content-Type': 'application/json'});
-        res.end(JSON.stringify({text: '確認しました。受付手順を整理し、次の打ち合わせで改善案を共有しましょう。'}));
+        res.end(JSON.stringify({choices: [{message: {role: 'assistant', content: '確認しました。受付手順を整理し、次の打ち合わせで改善案を共有しましょう。'}}]}));
     });
     await new Promise(resolve => ai.listen(0, '127.0.0.1', resolve));
     const reservation = http.createServer();
@@ -29,7 +34,7 @@ const {spawn} = require('node:child_process');
     const config = path.join(temp, 'minihub.json');
     fs.writeFileSync(config, JSON.stringify({version: 1, storage: {type: sqlite ? 'sqlite' : 'file'},
         server: {basePath, dataDir: path.join(temp, 'data')},
-        aiAccounts: disabled ? [] : [{id: 'helper', name: '社内アシスタント', url: `http://127.0.0.1:${ai.address().port}/ai`}],
+        aiAccounts: disabled ? [] : [{id: 'helper', name: '社内アシスタント', url: `http://127.0.0.1:${ai.address().port}/v1/chat/completions`, model: 'local-model'}],
     }), {mode: 0o600});
     const app = spawn(path.resolve(process.argv[2]), ['-config', config, '-addr', `127.0.0.1:${port}`], {
         cwd: temp, env: {...process.env, MINIHUB_ADMIN_PASSWORD: password}, stdio: 'ignore', windowsHide: true,
@@ -100,11 +105,12 @@ const {spawn} = require('node:child_process');
             await page.waitForFunction(() => T.current?.messages.filter(m => m.ai).length === 2);
             assert.equal(calls.length, 2);
             assert.equal(calls[1].messages.length, 3);
+            assert.deepEqual(calls[1].messages.map(m => m.role), ['user', 'assistant', 'user']);
             await page.locator('.toast .btn-close').evaluateAll(buttons => buttons.forEach(button => button.click()));
             await page.waitForTimeout(200);
             const screenshot = path.resolve('.tmp', `ai-browser-${sqlite ? 'sqlite' : 'file'}.png`);
             await page.screenshot({path: screenshot});
-            if (!sqlite) fs.copyFileSync(screenshot, path.resolve('docs/images/ai.png'));
+            if (!sqlite && process.argv.includes('--update-screenshot')) fs.copyFileSync(screenshot, path.resolve('docs/images/ai.png'));
             await page.setViewportSize({width: 390, height: 844});
             await page.locator('#threadAIButton').click();
             await page.locator('#threadMentionOptions button').waitFor();

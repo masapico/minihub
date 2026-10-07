@@ -10,7 +10,7 @@ import (
 
 func TestAIAccountValidation(t *testing.T) {
 	t.Setenv("MINIHUB_MISSING_AI_TEST_TOKEN", "")
-	a := AIAccount{ID: "helper", Name: "社内AI", URL: "http://127.0.0.1:8081/ai"}
+	a := AIAccount{ID: "helper", Name: "社内AI", URL: "http://127.0.0.1:8081/ai", Model: "test-model"}
 	if err := ValidateAIAccounts([]AIAccount{a}); err != nil {
 		t.Fatal(err)
 	}
@@ -21,6 +21,8 @@ func TestAIAccountValidation(t *testing.T) {
 		func(a *AIAccount) { a.ID = strings.Repeat("a", 62) },
 		func(a *AIAccount) { a.ID = "../bad" },
 		func(a *AIAccount) { a.Name = " " },
+		func(a *AIAccount) { a.Model = "" },
+		func(a *AIAccount) { a.Model = " \t " },
 		func(a *AIAccount) { a.URL = "ftp://host/ai" },
 		func(a *AIAccount) { a.URL = "http://user:secret@host/ai" },
 		func(a *AIAccount) { a.URL = "http://host/ai#fragment" },
@@ -57,7 +59,7 @@ func TestAIAccountValidation(t *testing.T) {
 
 func TestLoadAIAccountToken(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "minihub.json")
-	body := `{"aiAccounts":[{"id":"helper","name":"社内AI","url":"http://127.0.0.1:8081/ai","token":"direct-test-token"}]}`
+	body := `{"aiAccounts":[{"id":"helper","name":"社内AI","url":"http://127.0.0.1:8081/v1/chat/completions","model":"test-model","systemPrompt":"簡潔に回答してください。","token":"direct-test-token"}]}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +67,7 @@ func TestLoadAIAccountToken(t *testing.T) {
 	if err != nil || !loaded {
 		t.Fatalf("loaded=%v error=%v", loaded, err)
 	}
-	if len(cfg.AIAccounts) != 1 || cfg.AIAccounts[0].Token != "direct-test-token" || cfg.AIAccounts[0].TokenEnv != "" {
-		t.Fatal("direct token was not loaded")
+	if len(cfg.AIAccounts) != 1 || cfg.AIAccounts[0].Token != "direct-test-token" || cfg.AIAccounts[0].TokenEnv != "" || cfg.AIAccounts[0].Model != "test-model" || cfg.AIAccounts[0].SystemPrompt != "簡潔に回答してください。" {
+		t.Fatal("AI settings were not loaded")
 	}
 }

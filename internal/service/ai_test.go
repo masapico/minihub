@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -32,7 +33,7 @@ func aiService(t *testing.T, handler http.HandlerFunc, timeout string) *service.
 	}))
 	t.Cleanup(server.Close)
 	svc := setup(t)
-	if err := svc.StartAI(context.Background(), []config.AIAccount{{ID: "helper", Name: "社内AI", URL: server.URL, Timeout: timeout}}, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+	if err := svc.StartAI(context.Background(), []config.AIAccount{{ID: "helper", Name: "社内AI", URL: server.URL + "/custom/v1/chat/completions", Model: "test-model", Timeout: timeout}}, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(svc.CloseAI)
@@ -71,12 +72,12 @@ func TestAIMainPostAndThreadContext(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
-		if r.Header.Get("X-MiniHub-Request-ID") != body["requestId"] || r.Method != "POST" {
-			t.Error("missing request identity")
+		if len(r.Header.Get("X-MiniHub-Request-ID")) != 32 || r.Method != "POST" || r.URL.Path != "/custom/v1/chat/completions" || r.Header.Get("Content-Type") != "application/json" || r.Header.Get("Accept") != "application/json" {
+			t.Error("incorrect HTTP request")
 		}
 		requests <- body
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"text":"回答 @ai:helper @alice"}`)
+		io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"回答 @ai:helper @alice"}}]}`)
 	}, "")
 	ctx := context.Background()
 	root, err := svc.PostMessage(ctx, "alice", "general", "@ai:helper @ai:helper 質問")
@@ -85,8 +86,12 @@ func TestAIMainPostAndThreadContext(t *testing.T) {
 	}
 	answer := awaitAIReply(t, svc, root.Seq)
 	body := <-requests
-	if body["version"] != float64(1) || len(body["messages"].([]any)) != 1 || body["channel"].(map[string]any)["type"] != "private" {
+	if len(body) != 3 || body["model"] != "test-model" || body["stream"] != false || len(body["messages"].([]any)) != 1 {
 		t.Fatalf("payload: %#v", body)
+	}
+	first := body["messages"].([]any)[0].(map[string]any)
+	if first["role"] != "user" || !strings.HasSuffix(first["content"].(string), "(alice):\n"+root.Text) {
+		t.Fatalf("user context: %#v", first)
 	}
 	if answer.UserID != "ai_helper" || answer.AI.Name != "社内AI" || answer.AI.TriggerMessageID != root.ID || answer.AI.Kind != "answer" || len(answer.MentionUserIDs) != 0 {
 		t.Fatalf("answer: %#v", answer)
@@ -111,7 +116,7 @@ func TestAIMainPostAndThreadContext(t *testing.T) {
 		t.Fatal("no thread request")
 	}
 	items := body["messages"].([]any)
-	if len(items) != 3 || items[1].(map[string]any)["author"].(map[string]any)["kind"] != "ai" || items[2].(map[string]any)["id"] != trigger.ID {
+	if len(items) != 3 || items[1].(map[string]any)["role"] != "assistant" || items[1].(map[string]any)["content"] != answer.Text || items[2].(map[string]any)["role"] != "user" || !strings.HasSuffix(items[2].(map[string]any)["content"].(string), "\n"+trigger.Text) {
 		t.Fatalf("thread context: %#v", items)
 	}
 	if count.Load() != 2 {
@@ -131,9 +136,19 @@ func TestAIResponseFailures(t *testing.T) {
 		{"http_error", "secret upstream error", "text/plain", 500},
 		{"redirect", "", "application/json", 302},
 		{"invalid_json", "{", "application/json", 200},
-		{"missing_text", "{}", "application/json", 200},
-		{"wrong_content_type", `{"text":"answer"}`, "text/plain", 200},
-		{"long_answer", `{"text":"` + strings.Repeat("a", service.MaxMessageBytes+1) + `"}`, "application/json", 200},
+		{"missing_choices", "{}", "application/json", 200},
+		{"empty_choices", `{"choices":[]}`, "application/json", 200},
+		{"null_choices", `{"choices":null}`, "application/json", 200},
+		{"missing_content", `{"choices":[{"message":{}}]}`, "application/json", 200},
+		{"null_content", `{"choices":[{"message":{"content":null,"tool_calls":[]}}]}`, "application/json", 200},
+		{"wrong_content", `{"choices":[{"message":{"content":42}}]}`, "application/json", 200},
+		{"array_content", `{"choices":[{"message":{"content":[]}}]}`, "application/json", 200},
+		{"blank_content", `{"choices":[{"message":{"content":"  \n "}}]}`, "application/json", 200},
+		{"old_contract", `{"text":"answer"}`, "application/json", 200},
+		{"long_json", `{"padding":"` + strings.Repeat("a", 1024*1024) + `","choices":[{"message":{"content":"answer"}}]}`, "application/json", 200},
+		{"wrong_content_type", `{"choices":[{"message":{"role":"assistant","content":"answer"}}]}`, "text/plain", 200},
+		{"long_answer", `{"choices":[{"message":{"content":"` + strings.Repeat("a", service.MaxMessageBytes+1) + `"}}]}`, "application/json", 200},
+		{"long_utf8_answer", `{"choices":[{"message":{"content":"` + strings.Repeat("あ", service.MaxMessageBytes/3+1) + `"}}]}`, "application/json", 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls atomic.Int32
@@ -156,6 +171,30 @@ func TestAIResponseFailures(t *testing.T) {
 	}
 }
 
+func TestAIResponseAnswers(t *testing.T) {
+	for _, text := range []string{"日本語の回答", strings.Repeat("a", service.MaxMessageBytes)} {
+		t.Run("bytes="+strconv.Itoa(len(text)), func(t *testing.T) {
+			svc := aiService(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				json.NewEncoder(w).Encode(map[string]any{
+					"id": "chatcmpl-test", "object": "chat.completion", "usage": map[string]int{"total_tokens": 42},
+					"choices": []any{
+						map[string]any{"index": 0, "message": map[string]string{"role": "assistant", "content": text}, "finish_reason": "stop"},
+						map[string]any{"index": 1, "message": map[string]string{"role": "assistant", "content": "second choice"}},
+					},
+				})
+			}, "")
+			root, err := svc.PostMessage(context.Background(), "alice", "general", "@ai:helper test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if m := awaitAIReply(t, svc, root.Seq); m.AI.Kind != "answer" || m.Text != text {
+				t.Fatalf("answer: %#v", m)
+			}
+		})
+	}
+}
+
 func TestAITimeoutAndEmptyResponse(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {
 		svc := aiService(t, func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }, "250ms")
@@ -173,7 +212,7 @@ func TestAITimeoutAndEmptyResponse(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(status)
 				if status == 200 {
-					io.WriteString(w, `{"text":""}`)
+					io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":""}}]}`)
 				}
 			}, "")
 			ctx, cancel := context.WithCancel(context.Background())
@@ -182,12 +221,8 @@ func TestAITimeoutAndEmptyResponse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			time.Sleep(50 * time.Millisecond)
-			svc.CloseAI()
-			after := int64(0)
-			page, err := svc.GetThreadMessages(context.Background(), "alice", "general", root.Seq, storage.MessageQuery{AfterSeq: &after, Limit: 100})
-			if err != nil || len(page.Messages) != 0 {
-				t.Fatalf("empty response posted: %#v %v", page, err)
+			if m := awaitAIReply(t, svc, root.Seq); m.AI.Kind != "error" {
+				t.Fatalf("empty response did not report error: %#v", m)
 			}
 		})
 	}
@@ -256,7 +291,7 @@ func TestAIWithdrawalWhileRunning(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"text":"late answer"}`)
+		io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"late answer"}}]}`)
 		close(returned)
 	}, "")
 	ctx := context.Background()
@@ -296,24 +331,24 @@ func TestAIMultipleAccountsAndBearer(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
-		id := body["aiAccount"].(map[string]any)["id"].(string)
+		id := body["model"].(string)
 		wantAuth := map[string]string{"helper": "Bearer direct-test-token", "reviewer": "Bearer fake-test-token", "observer": ""}
 		if r.Header.Get("Authorization") != wantAuth[id] {
 			t.Errorf("incorrect Bearer authentication for %s", id)
 		}
 		requests <- id
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"text":"done"}`)
+		io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"done"}}]}`)
 	}))
 	defer server.Close()
 	t.Setenv("MINIHUB_AI_MULTI_TEST_TOKEN", "fake-test-token")
 	svc := setup(t)
 	disabled := false
 	if err := svc.StartAI(context.Background(), []config.AIAccount{
-		{ID: "helper", Name: "Helper", URL: server.URL, Token: "direct-test-token"},
-		{ID: "reviewer", Name: "Reviewer", URL: server.URL, TokenEnv: "MINIHUB_AI_MULTI_TEST_TOKEN"},
-		{ID: "observer", Name: "Observer", URL: server.URL},
-		{ID: "disabled", Name: "Disabled", URL: server.URL, Enabled: &disabled},
+		{ID: "helper", Name: "Helper", URL: server.URL, Model: "helper", Token: "direct-test-token"},
+		{ID: "reviewer", Name: "Reviewer", URL: server.URL, Model: "reviewer", TokenEnv: "MINIHUB_AI_MULTI_TEST_TOKEN"},
+		{ID: "observer", Name: "Observer", URL: server.URL, Model: "observer"},
+		{ID: "disabled", Name: "Disabled", URL: server.URL, Model: "test-model", Enabled: &disabled},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatal(err)
 	}

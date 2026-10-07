@@ -11,13 +11,15 @@ import (
 )
 
 type AIAccount struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Enabled  *bool  `json:"enabled,omitempty"`
-	URL      string `json:"url"`
-	Timeout  string `json:"timeout,omitempty"`
-	Token    string `json:"token,omitempty"`
-	TokenEnv string `json:"tokenEnv,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Enabled      *bool  `json:"enabled,omitempty"`
+	URL          string `json:"url"`
+	Model        string `json:"model"`
+	SystemPrompt string `json:"systemPrompt,omitempty"`
+	Timeout      string `json:"timeout,omitempty"`
+	Token        string `json:"token,omitempty"`
+	TokenEnv     string `json:"tokenEnv,omitempty"`
 }
 
 func (a AIAccount) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
@@ -40,6 +42,9 @@ func ValidateAIAccounts(accounts []AIAccount) error {
 		ids[a.ID] = true
 		if strings.TrimSpace(a.Name) == "" || utf8.RuneCountInString(a.Name) > 100 {
 			return fmt.Errorf("aiAccounts %s: name must contain 1 to 100 characters", a.ID)
+		}
+		if strings.TrimSpace(a.Model) == "" {
+			return fmt.Errorf("aiAccounts %s: model must not be blank", a.ID)
 		}
 		u, err := url.Parse(a.URL)
 		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Fragment != "" {

@@ -2,9 +2,9 @@
 
 ## Goの基本チェック
 
-AI連携は`go test ./internal/service ./internal/config ./internal/httpapi ./internal/storage/backend ./internal/storage/sqlitestore -run AI`でモックAPI、履歴上限、タイムアウト、待機上限、停止、保存・移行・復元を検証します。共通試験は`MINIHUB_TEST_STORAGE=sqlite`でも実行してください。
+AI連携は`go test ./internal/service ./internal/config ./internal/httpapi ./internal/storage/backend ./internal/storage/sqlitestore -run AI`でOpenAI互換Chat CompletionsのモックAPI、モデル名・認証・システム指示、履歴のロールと上限、不正・空の回答、タイムアウト、待機上限、停止、保存・移行・復元を検証します。共通試験は`MINIHUB_TEST_STORAGE=sqlite`でも実行してください。
 
-`node tests/ai-browser.cjs <実行ファイル>`はPlaywrightとChromium系ブラウザで、独立した一時サーバー・モックAIを使い、ロボットボタン、候補検索・キーボード挿入、下書き復元、通常投稿と返信の履歴、回答表示、狭い画面を確認します。`--sqlite`でSQLiteと`/hub`配備、`--disabled`でAI未設定時の非表示を確認します。`NODE_PATH`と`BROWSER_PATH`は既存ブラウザ試験と同様です。file方式の有効モードは`docs/images/ai.png`も更新します。既存データは使用しません。
+`node tests/ai-browser.cjs <実行ファイル>`はPlaywrightとChromium系ブラウザで、独立した一時サーバー・OpenAI互換のモックAIを使い、ロボットボタン、候補検索・キーボード挿入、下書き復元、通常投稿と返信の履歴、回答表示、狭い画面を確認します。`--sqlite`でSQLiteと`/hub`配備、`--disabled`でAI未設定時の非表示を確認します。`NODE_PATH`と`BROWSER_PATH`は既存ブラウザ試験と同様です。file方式の有効モードに`--update-screenshot`を付けると`docs/images/ai.png`も更新します。既存データは使用しません。
 
 ```bash
 go test ./...

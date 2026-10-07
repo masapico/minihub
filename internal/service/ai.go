@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/masapico/minihub/internal/config"
 	"github.com/masapico/minihub/internal/domain"
@@ -189,33 +188,13 @@ func (s *Service) validateAIJob(ctx context.Context, j aiJob) error {
 	return nil
 }
 
-type aiAuthor struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
 type aiContextMessage struct {
-	ID        string    `json:"id"`
-	Seq       int64     `json:"seq"`
-	Timestamp time.Time `json:"ts"`
-	Author    aiAuthor  `json:"author"`
-	Text      string    `json:"text"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 type aiRequest struct {
-	Version   int              `json:"version"`
-	RequestID string           `json:"requestId"`
-	AIAccount AIAccountSummary `json:"aiAccount"`
-	Channel   struct {
-		ID   string             `json:"id"`
-		Name string             `json:"name"`
-		Type domain.ChannelType `json:"type"`
-	} `json:"channel"`
-	RequestedBy AIAccountSummary `json:"requestedBy"`
-	Trigger     struct {
-		ID            string `json:"id"`
-		Seq           int64  `json:"seq"`
-		ThreadRootSeq int64  `json:"threadRootSeq"`
-	} `json:"trigger"`
+	Model    string             `json:"model"`
+	Stream   bool               `json:"stream"`
 	Messages []aiContextMessage `json:"messages"`
 }
 
@@ -223,10 +202,6 @@ var errAIContextLimit = errors.New("AI context limit exceeded")
 
 func (s *Service) aiPayload(ctx context.Context, j aiJob) ([]byte, error) {
 	if err := s.validateAIJob(ctx, j); err != nil {
-		return nil, err
-	}
-	ch, err := s.channel(ctx, j.channel)
-	if err != nil {
 		return nil, err
 	}
 	users, err := s.storage.ListUsers(ctx)
@@ -237,9 +212,10 @@ func (s *Service) aiPayload(ctx context.Context, j aiJob) ([]byte, error) {
 	for _, u := range users {
 		names[u.ID] = u.Name
 	}
-	p := aiRequest{Version: 1, RequestID: j.id, AIAccount: AIAccountSummary{j.account.ID, j.account.Name}, RequestedBy: AIAccountSummary{j.author, names[j.author]}, Messages: []aiContextMessage{}}
-	p.Channel.ID, p.Channel.Name, p.Channel.Type = ch.ID, ch.Name, ch.Type
-	p.Trigger.ID, p.Trigger.Seq, p.Trigger.ThreadRootSeq = j.trigger.ID, j.trigger.Seq, j.trigger.ThreadRootSeq
+	p := aiRequest{Model: j.account.Model, Messages: []aiContextMessage{}}
+	if strings.TrimSpace(j.account.SystemPrompt) != "" {
+		p.Messages = append(p.Messages, aiContextMessage{Role: "system", Content: j.account.SystemPrompt})
+	}
 	total := 0
 	count := 0
 	add := func(m domain.Message) error {
@@ -251,17 +227,22 @@ func (s *Service) aiPayload(ctx context.Context, j aiJob) ([]byte, error) {
 		if err != nil {
 			return err
 		}
-		if m.WithdrawnAt != nil {
+		if m.WithdrawnAt != nil || (m.AI != nil && m.AI.Kind == "error") {
 			return nil
 		}
-		author := aiAuthor{Kind: "user", ID: m.UserID, Name: names[m.UserID]}
-		if author.Name == "" {
-			author.Name = m.UserID
+		item := aiContextMessage{Role: "user", Content: m.Text}
+		if m.AI != nil && m.AI.ID == j.account.ID {
+			item.Role = "assistant"
+		} else {
+			id, name := m.UserID, names[m.UserID]
+			if m.AI != nil {
+				name = m.AI.Name
+			}
+			if name == "" {
+				name = id
+			}
+			item.Content = fmt.Sprintf("%s (%s):\n%s", name, id, m.Text)
 		}
-		if m.AI != nil {
-			author = aiAuthor{Kind: "ai", ID: m.AI.ID, Name: m.AI.Name}
-		}
-		item := aiContextMessage{m.ID, m.Seq, m.Timestamp, author, m.Text}
 		encoded, err := json.Marshal(item)
 		if err != nil {
 			return err
@@ -341,16 +322,13 @@ func (s *Service) runAI(d *aiDispatcher, j aiJob) {
 	if j.account.token != "" {
 		req.Header.Set("Authorization", "Bearer "+j.account.token)
 	}
-	// No automatic retry: this POST can trigger external business operations.
+	// No automatic retry: a lost response may already have generated an answer.
 	resp, err := d.client.Do(req)
 	if err != nil {
-		s.aiFailure(d, j, "AIへの接続に失敗したか、処理がタイムアウトしました。再送すると処理が重複する可能性があるため、実行状況を確認してください。", "request_failed")
+		s.aiFailure(d, j, "AIへの接続に失敗したか、処理がタイムアウトしました。時間をおいて再度お試しください。", "request_failed")
 		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNoContent {
-		return
-	}
 	media, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if resp.StatusCode != http.StatusOK || media != "application/json" {
 		s.aiFailure(d, j, "AIから正常な応答を受信できませんでした。", "response_invalid")
@@ -358,16 +336,22 @@ func (s *Service) runAI(d *aiDispatcher, j aiJob) {
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, aiMaxContextBytes+1))
 	var reply struct {
-		Text *string `json:"text"`
+		Choices []struct {
+			Message struct {
+				Content *string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
 	}
-	if err != nil || len(b) > aiMaxContextBytes || json.Unmarshal(b, &reply) != nil || reply.Text == nil || len([]byte(*reply.Text)) > MaxMessageBytes {
+	if err != nil || len(b) > aiMaxContextBytes || json.Unmarshal(b, &reply) != nil || len(reply.Choices) == 0 || reply.Choices[0].Message.Content == nil {
 		s.aiFailure(d, j, "AIの回答形式または回答サイズが不正です（本文は16 KiB以内）。", "response_invalid")
 		return
 	}
-	if strings.TrimSpace(*reply.Text) == "" {
+	answer := *reply.Choices[0].Message.Content
+	if len(answer) > MaxMessageBytes || strings.TrimSpace(answer) == "" {
+		s.aiFailure(d, j, "AIの回答形式または回答サイズが不正です（本文は16 KiB以内）。", "response_invalid")
 		return
 	}
-	if err := s.saveAIReply(d.ctx, j, *reply.Text, "answer"); err != nil {
+	if err := s.saveAIReply(d.ctx, j, answer, "answer"); err != nil {
 		d.logger.Warn("AI reply not saved", "requestId", j.id, "channelId", j.channel)
 	}
 }
