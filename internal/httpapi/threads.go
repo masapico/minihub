@@ -84,12 +84,13 @@ func (a *API) threadRoutes(w http.ResponseWriter, r *http.Request, userID string
 			}
 		case http.MethodPost:
 			var input struct {
-				Text string `json:"text"`
+				Text          string   `json:"text"`
+				AttachmentIDs []string `json:"attachmentIds"`
 			}
 			if !a.decode(w, r, &input) {
 				return true
 			}
-			m, err := a.service.PostThreadMessage(r.Context(), userID, channel, root, input.Text)
+			m, err := a.service.PostThreadMessage(r.Context(), userID, channel, root, input.Text, input.AttachmentIDs...)
 			if err != nil {
 				a.writeError(w, err)
 			} else {

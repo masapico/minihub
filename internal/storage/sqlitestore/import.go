@@ -542,10 +542,19 @@ func databaseManifest(ctx context.Context, tx *sql.Tx) (Manifest, error) {
 	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM pragma_table_info('messages') WHERE name='ai'").Scan(&hasAI); err != nil {
 		return nil, err
 	}
-	columns := messageColumns
-	if hasAI == 0 {
-		columns = strings.TrimSuffix(columns, ",ai") + ",NULL"
+	var hasAttachments int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM pragma_table_info('messages') WHERE name='attachments'").Scan(&hasAttachments); err != nil {
+		return nil, err
 	}
+	aiExpr := "ai"
+	if hasAI == 0 {
+		aiExpr = "NULL"
+	}
+	attExpr := "attachments"
+	if hasAttachments == 0 {
+		attExpr = "NULL"
+	}
+	columns := fmt.Sprintf("seq,id,ts,user_id,text,root,mention_ids,schedule_id,schedule_event,poll_id,%s,%s", aiExpr, attExpr)
 	queries := []struct{ kind, query string }{
 		{"messages", "SELECT channel_id," + columns + " FROM messages"},
 		{"reaction_events", "SELECT event_id,channel_id,seq,user_id,key,active,ts,version FROM reaction_events"},
@@ -578,9 +587,9 @@ func databaseManifest(ctx context.Context, tx *sql.Tx) (Manifest, error) {
 				v = json.RawMessage(b)
 			case "messages":
 				var ch, ts string
-				var ids, sch, event, poll, ai sql.NullString
+				var ids, sch, event, poll, ai, attachments sql.NullString
 				var m domain.Message
-				err = rows.Scan(&ch, &m.Seq, &m.ID, &ts, &m.UserID, &m.Text, &m.ThreadRootSeq, &ids, &sch, &event, &poll, &ai)
+				err = rows.Scan(&ch, &m.Seq, &m.ID, &ts, &m.UserID, &m.Text, &m.ThreadRootSeq, &ids, &sch, &event, &poll, &ai, &attachments)
 				if err == nil {
 					m.Timestamp, err = time.Parse(time.RFC3339Nano, ts)
 				}
@@ -595,6 +604,9 @@ func databaseManifest(ctx context.Context, tx *sql.Tx) (Manifest, error) {
 				}
 				if err == nil && ai.Valid {
 					err = json.Unmarshal([]byte(ai.String), &m.AI)
+				}
+				if err == nil && attachments.Valid {
+					err = json.Unmarshal([]byte(attachments.String), &m.Attachments)
 				}
 				key = ch + "/" + strconv.FormatInt(m.Seq, 10)
 				v = m

@@ -183,8 +183,9 @@ func (s *FileStorage) applyRetention(ctx context.Context, plan retentionPlan) er
 				err = rewriteRetentionLog(ctx, path, func(line []byte) (bool, error) {
 					if kind == "messages" {
 						var m struct {
-							Seq int64  `json:"seq"`
-							ID  string `json:"id"`
+							Seq         int64               `json:"seq"`
+							ID          string              `json:"id"`
+							Attachments []domain.Attachment `json:"attachments,omitempty"`
 						}
 						if e := json.Unmarshal(line, &m); e != nil {
 							return false, e
@@ -192,6 +193,13 @@ func (s *FileStorage) applyRetention(ctx context.Context, plan retentionPlan) er
 						id, gone := selected.Messages[m.Seq]
 						if gone && id != m.ID {
 							return false, errors.New("retention journal message ID mismatch")
+						}
+						if gone {
+							for _, att := range m.Attachments {
+								if att.Path != "" {
+									_ = os.Remove(att.Path)
+								}
+							}
 						}
 						return !gone, nil
 					}

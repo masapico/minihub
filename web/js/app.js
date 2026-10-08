@@ -8,6 +8,7 @@ const S = {
         unread: new Map(),
         groups: new Map(),
 		aiAccounts: [],
+		stagedAttachments: [],
     },
     $ = (x) => document.getElementById(x),
     nameSegmenter = typeof Intl.Segmenter === "function"
@@ -95,6 +96,86 @@ async function api(path, o = {}) {
     if (typeof absorbThreadSummaries === "function" && method === "GET") absorbThreadSummaries(path, b);
     return b;
 }
+const allowedAttachmentExts = new Set([
+    ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".ppt", ".pdf",
+    ".txt", ".csv", ".tsv", ".json", ".md",
+]);
+function isAllowedAttachmentFile(name) {
+    const dot = name.lastIndexOf(".");
+    if (dot === -1) return false;
+    return allowedAttachmentExts.has(name.slice(dot).toLowerCase());
+}
+const aiMentionRegex = /(?:^|\s)@ai:[A-Za-z0-9_-]+/;
+function textHasAIMention(text) {
+    return aiMentionRegex.test(text || "");
+}
+function formatFileSize(bytes) {
+    if (bytes == null || isNaN(bytes)) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+function renderAttachments(attachments) {
+    if (!attachments || !attachments.length) return null;
+    const container = document.createElement("div");
+    container.className = "message-attachments";
+    for (const att of attachments) {
+        const item = document.createElement("div");
+        item.className = "message-attachment-item";
+        item.innerHTML = `<span class="message-attachment-icon">${icon("paperclip")}</span><span class="message-attachment-name"></span><span class="message-attachment-size"></span>`;
+        item.querySelector(".message-attachment-name").textContent = att.name;
+        item.querySelector(".message-attachment-size").textContent = formatFileSize(att.size);
+        container.append(item);
+    }
+    return container;
+}
+async function uploadAttachment(channelID, file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers = {};
+    if (S.csrf) headers["X-CSRF-Token"] = S.csrf;
+    let r;
+    try {
+        r = await fetch(Minihub.url(`/api/channels/${encodeURIComponent(channelID)}/attachments`), {
+            method: "POST",
+            headers,
+            body: formData,
+        });
+    } catch (_) {
+        throw Error("通信に失敗しました。ネットワーク接続を確認して、もう一度お試しください");
+    }
+    if (r.status === 401) {
+        location.replace(Minihub.url("/login"));
+        throw Error("セッションの有効期限が切れました");
+    }
+    const b = await r.json().catch(() => ({ error: "サーバーからの応答を読み取れませんでした" }));
+    if (!r.ok) throw Error(b.error || "ファイルのアップロードに失敗しました");
+    return b;
+}
+function renderStagedAttachments() {
+    const host = $("attachedFiles");
+    if (!host) return;
+    host.replaceChildren();
+    if (!S.stagedAttachments || !S.stagedAttachments.length) {
+        host.classList.add("hidden");
+        return;
+    }
+    host.classList.remove("hidden");
+    for (let i = 0; i < S.stagedAttachments.length; i++) {
+        const att = S.stagedAttachments[i];
+        const chip = document.createElement("div");
+        chip.className = "attached-file-chip";
+        chip.innerHTML = `<span class="chip-icon">${icon("paperclip")}</span><span class="chip-name"></span><span class="chip-size"></span><button type="button" class="chip-remove" aria-label="添付を解除">&times;</button>`;
+        chip.querySelector(".chip-name").textContent = att.name;
+        chip.querySelector(".chip-size").textContent = formatFileSize(att.size);
+        chip.querySelector(".chip-remove").onclick = () => {
+            S.stagedAttachments.splice(i, 1);
+            renderStagedAttachments();
+            syncEditorState();
+        };
+        host.append(chip);
+    }
+}
 function note(x, e = false, store = true) {
     const type = typeof e === "string" ? e : e ? "danger" : "success";
     if (store) storeLocalNotification(x, type);
@@ -170,6 +251,8 @@ function setSelectedGroups(id, groupIDs) {
 }
 async function select(id) {
     closeMainMentionMenu();
+    S.stagedAttachments = [];
+    renderStagedAttachments();
     S.channel = await api(
         "/api/channels/" + encodeURIComponent(id),
     );
@@ -529,11 +612,33 @@ Object.defineProperties(editor, {
 });
 
 function syncEditorState() {
-    const bytes = textEncoder.encode(editorValue()).length,
+    const text = editorValue();
+    const bytes = textEncoder.encode(text).length,
         over = bytes > MAX_MESSAGE_BYTES;
     $("editorLimit").textContent = over ? `${bytes.toLocaleString()} / ${MAX_MESSAGE_BYTES.toLocaleString()} bytes` : "";
     editor.setAttribute("aria-invalid", String(over));
-    $("send").disabled = editor.disabled || over;
+
+    const hasAI = textHasAIMention(text);
+    const hasAttachments = (S.stagedAttachments || []).length > 0;
+    const attachBtn = $("attachButton");
+    if (attachBtn) {
+        attachBtn.disabled = editor.disabled || !hasAI;
+        attachBtn.title = hasAI ? "ファイルを添付" : "ファイルを添付 (@ai:メンション時のみ有効)";
+    }
+
+    const attachWithoutAI = hasAttachments && !hasAI;
+    const inputHint = $("inputHint");
+    if (inputHint) {
+        if (attachWithoutAI) {
+            inputHint.textContent = "添付ファイルはAI宛てメッセージ（@ai:...）にのみ送信できます";
+            inputHint.classList.remove("hidden");
+        } else {
+            inputHint.textContent = "";
+            inputHint.classList.add("hidden");
+        }
+    }
+
+    $("send").disabled = editor.disabled || over || attachWithoutAI;
     for (const button of document.querySelectorAll(".composer .tools [data-format], #linkButton, #mentionButton, #aiButton"))
         button.disabled = editor.disabled;
 }
@@ -601,9 +706,9 @@ function installRichEditor(root, {toolbar, limit, sendButton, sync, onInput}) {
         root.setAttribute("aria-invalid", String(over));
         sendButton.disabled = root.disabled || over;
         for (const button of toolbar.querySelectorAll("button"))
-            if (button !== sendButton) button.disabled = root.disabled;
+            if (button !== sendButton && button.id !== "threadAttachButton" && button.id !== "attachButton") button.disabled = root.disabled;
     };
-    root.addEventListener("input", () => { update(); onInput?.(); });
+    root.addEventListener("input", () => { update(); sync?.(); onInput?.(); });
     root.addEventListener("keyup", () => updateFormatButtons(root, toolbar));
     root.addEventListener("mouseup", () => updateFormatButtons(root, toolbar));
     root.addEventListener("paste", (event) => {
@@ -630,6 +735,10 @@ function render() {
             m.ts,
         ).toLocaleString("ja-JP");
         a.querySelector(".text").append(fragment(messageDisplayText(m)));
+        if (!m.withdrawnAt && m.attachments && m.attachments.length) {
+            const atts = renderAttachments(m.attachments);
+            if (atts) a.querySelector(".text").append(atts);
+        }
         h.append(a);
     }
 }
@@ -687,14 +796,21 @@ async function send() {
         note("メッセージは16 KiB以内にしてください", true);
         return;
     }
+    const attachmentIds = (S.stagedAttachments || []).map((a) => a.id);
+    if (attachmentIds.length && !textHasAIMention(text)) {
+        note("添付ファイルはAI宛てメッセージ（@ai:...）にのみ送信できます", true);
+        return;
+    }
     const channelID = S.channel.id;
     try {
         const message = await api(
             `/api/channels/${channelID}/messages`,
-            { method: "POST", body: JSON.stringify({ text }) },
+            { method: "POST", body: JSON.stringify({ text, attachmentIds }) },
         );
 		stopTyping();
         $("input").value = "";
+        S.stagedAttachments = [];
+        renderStagedAttachments();
 		advanceLocalRead(channelID, message.seq);
 		api(`/api/channels/${encodeURIComponent(channelID)}/read`, {
 			method: "PUT",
@@ -732,6 +848,49 @@ editor.addEventListener("paste", (event) => {
     event.preventDefault();
     document.execCommand("insertText", false, event.clipboardData.getData("text/plain"));
 });
+$("attachButton").onclick = () => $("attachFileInput").click();
+$("attachFileInput").onchange = async (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!files.length) return;
+    if (!S.channel) {
+        note("チャンネルを選択してください", true);
+        return;
+    }
+    if ((S.stagedAttachments.length + files.length) > 5) {
+        note("添付できるファイルは最大5件までです", true);
+        return;
+    }
+    for (const f of files) {
+        if (!isAllowedAttachmentFile(f.name)) {
+            note(`未対応のファイル形式です: ${f.name}（Office文書、PDF、テキスト/データ形式のみ対応）`, true);
+            return;
+        }
+        if (f.size > 20 * 1024 * 1024) {
+            note(`ファイルサイズが20MBを超えています: ${f.name}`, true);
+            return;
+        }
+    }
+    const currentTotal = S.stagedAttachments.reduce((sum, a) => sum + (a.size || 0), 0);
+    const newTotal = files.reduce((sum, f) => sum + f.size, 0);
+    if (currentTotal + newTotal > 50 * 1024 * 1024) {
+        note("添付ファイルの合計サイズは50MB以下にしてください", true);
+        return;
+    }
+    $("attachButton").disabled = true;
+    try {
+        for (const f of files) {
+            const att = await uploadAttachment(S.channel.id, f);
+            S.stagedAttachments.push(att);
+        }
+    } catch (err) {
+        note(err.message, true);
+    } finally {
+        $("attachButton").disabled = false;
+        renderStagedAttachments();
+        syncEditorState();
+    }
+};
 $("join").onclick = async () => {
     const channelID = S.channel?.id;
     if (!channelID || S.channelActionBusy) return;
@@ -3225,6 +3384,10 @@ render = function () {
             });
         article.querySelector(".seq").textContent = `seq ${m.seq}`;
 		article.querySelector(".text").append(m.withdrawnAt ? withdrawnNotice(m) : fragment(messageDisplayText(m)));
+		if (!m.withdrawnAt && m.attachments && m.attachments.length) {
+			const atts = renderAttachments(m.attachments);
+			if (atts) article.querySelector(".text").append(atts);
+		}
 		const scheduleLink = scheduleReference(m.scheduleRef, m.text, !!m.withdrawnAt);
 		if (scheduleLink) article.querySelector(".text").append(document.createElement("br"), scheduleLink);
 		if (m.pollRef && typeof window.pollRenderCard === "function") {

@@ -13,6 +13,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -230,7 +231,15 @@ func (s *Service) aiPayload(ctx context.Context, j aiJob) ([]byte, error) {
 		if m.WithdrawnAt != nil || (m.AI != nil && m.AI.Kind == "error") {
 			return nil
 		}
-		item := aiContextMessage{Role: "user", Content: m.Text}
+		text := m.Text
+		if len(m.Attachments) > 0 {
+			var tags []string
+			for _, att := range m.Attachments {
+				tags = append(tags, fmt.Sprintf("[添付ファイル: %s]", filepath.ToSlash(att.Path)))
+			}
+			text = text + "\n" + strings.Join(tags, "\n")
+		}
+		item := aiContextMessage{Role: "user", Content: text}
 		if m.AI != nil && m.AI.ID == j.account.ID {
 			item.Role = "assistant"
 		} else {
@@ -241,7 +250,7 @@ func (s *Service) aiPayload(ctx context.Context, j aiJob) ([]byte, error) {
 			if name == "" {
 				name = id
 			}
-			item.Content = fmt.Sprintf("%s (%s):\n%s", name, id, m.Text)
+			item.Content = fmt.Sprintf("%s (%s):\n%s", name, id, text)
 		}
 		encoded, err := json.Marshal(item)
 		if err != nil {

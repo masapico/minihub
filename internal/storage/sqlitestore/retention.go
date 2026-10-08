@@ -3,9 +3,12 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/masapico/minihub/internal/domain"
 	"github.com/masapico/minihub/internal/storage"
 )
 
@@ -71,7 +74,25 @@ func (s *Store) PruneRetention(ctx context.Context, cutoff time.Time, apply bool
 			return report, err
 		}
 	}
+	var filesToDelete []string
 	if apply {
+		rows, qErr := tx.QueryContext(ctx, `SELECT attachments FROM messages WHERE EXISTS (SELECT 1 FROM retention_selected r WHERE r.channel_id=messages.channel_id AND r.seq=messages.seq) AND attachments IS NOT NULL`)
+		if qErr == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var raw sql.NullString
+				if rows.Scan(&raw) == nil && raw.Valid {
+					var atts []domain.Attachment
+					if json.Unmarshal([]byte(raw.String), &atts) == nil {
+						for _, att := range atts {
+							if att.Path != "" {
+								filesToDelete = append(filesToDelete, att.Path)
+							}
+						}
+					}
+				}
+			}
+		}
 		for _, q := range []string{
 			`DELETE FROM mention_refs WHERE message_id IN (SELECT id FROM retention_selected)`,
 			`DELETE FROM mention_reads WHERE message_id IN (SELECT id FROM retention_selected)`,
@@ -102,6 +123,9 @@ func (s *Store) PruneRetention(ctx context.Context, cutoff time.Time, apply bool
 	}
 	if err = tx.Commit(); err != nil {
 		return report, err
+	}
+	for _, f := range filesToDelete {
+		_ = os.Remove(f)
 	}
 	if err = s.checkpointRetention(ctx); err != nil {
 		return report, err

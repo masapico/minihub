@@ -60,6 +60,13 @@ type Channel struct {
 	ArchivedBy string      `json:"archivedBy,omitempty"`
 }
 
+type Attachment struct {
+	ID       string `json:"id"`
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+	Path     string `json:"path"`
+}
+
 type Message struct {
 	AI             *AIMessage         `json:"ai,omitempty"`
 	WithdrawnAt    *time.Time         `json:"withdrawnAt,omitempty"`
@@ -74,6 +81,7 @@ type Message struct {
 	MentionUserIDs []string           `json:"mentionUserIds,omitempty"`
 	ScheduleRef    *ScheduleReference `json:"scheduleRef,omitempty"`
 	PollRef        *PollReference     `json:"pollRef,omitempty"`
+	Attachments    []Attachment       `json:"attachments,omitempty"`
 }
 
 // AIMessage preserves attribution even after an account is removed from config.

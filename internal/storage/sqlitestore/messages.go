@@ -16,15 +16,15 @@ import (
 	"time"
 )
 
-const messageColumns = `seq,id,ts,user_id,text,root,mention_ids,schedule_id,schedule_event,poll_id,ai`
+const messageColumns = `seq,id,ts,user_id,text,root,mention_ids,schedule_id,schedule_event,poll_id,ai,attachments`
 
 type scanner interface{ Scan(...any) error }
 
 func scanMessage(row scanner) (domain.Message, error) {
 	var m domain.Message
 	var ts string
-	var mentions, sch, event, poll, ai sql.NullString
-	err := row.Scan(&m.Seq, &m.ID, &ts, &m.UserID, &m.Text, &m.ThreadRootSeq, &mentions, &sch, &event, &poll, &ai)
+	var mentions, sch, event, poll, ai, attachments sql.NullString
+	err := row.Scan(&m.Seq, &m.ID, &ts, &m.UserID, &m.Text, &m.ThreadRootSeq, &mentions, &sch, &event, &poll, &ai, &attachments)
 	if err != nil {
 		return m, missing(err)
 	}
@@ -48,6 +48,11 @@ func scanMessage(row scanner) (domain.Message, error) {
 			return m, err
 		}
 	}
+	if attachments.Valid {
+		if err = json.Unmarshal([]byte(attachments.String), &m.Attachments); err != nil {
+			return m, err
+		}
+	}
 	return m, nil
 }
 
@@ -60,13 +65,20 @@ func insertMessage(ctx context.Context, tx *sql.Tx, ch string, m domain.Message)
 	if m.Seq < 1 || m.Text == "" || m.Timestamp.IsZero() || m.ThreadRootSeq < 0 || m.ThreadRootSeq >= m.Seq {
 		return errors.New("invalid message")
 	}
-	var mentions, sch, event, poll, ai any
+	var mentions, sch, event, poll, ai, attachments any
 	if m.AI != nil {
 		b, err := json.Marshal(m.AI)
 		if err != nil {
 			return err
 		}
 		ai = string(b)
+	}
+	if len(m.Attachments) > 0 {
+		b, err := json.Marshal(m.Attachments)
+		if err != nil {
+			return err
+		}
+		attachments = string(b)
 	}
 	if m.MentionUserIDs != nil {
 		b, err := json.Marshal(m.MentionUserIDs)
@@ -91,7 +103,7 @@ func insertMessage(ctx context.Context, tx *sql.Tx, ch string, m domain.Message)
 		}
 		poll = m.PollRef.ID
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO messages(channel_id,seq,id,ts,ts_ns,user_id,text,root,mention_ids,schedule_id,schedule_event,poll_id,ai) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, ch, m.Seq, m.ID, m.Timestamp.Format(time.RFC3339Nano), m.Timestamp.UnixNano(), m.UserID, m.Text, m.ThreadRootSeq, mentions, sch, event, poll, ai)
+	_, err := tx.ExecContext(ctx, `INSERT INTO messages(channel_id,seq,id,ts,ts_ns,user_id,text,root,mention_ids,schedule_id,schedule_event,poll_id,ai,attachments) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, ch, m.Seq, m.ID, m.Timestamp.Format(time.RFC3339Nano), m.Timestamp.UnixNano(), m.UserID, m.Text, m.ThreadRootSeq, mentions, sch, event, poll, ai, attachments)
 	if err != nil {
 		return err
 	}

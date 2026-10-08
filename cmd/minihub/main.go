@@ -126,6 +126,12 @@ func run() (runErr error) {
 	}
 	retention := time.Duration(cfg.Notifications.MentionRetentionDays) * 24 * time.Hour
 	svc := service.NewWithOptions(store, cfg.Features.SelfPasswordChange, retention)
+	svc.SetAttachmentsDir(filepath.Join(*dataDir, "attachments"))
+	deletedAtts, attErr := svc.CleanupAttachments(time.Now())
+	logger.Info("expired attachment cleanup completed", "deleted", deletedAtts)
+	if attErr != nil {
+		logger.Warn("attachment cleanup incomplete", "error", attErr)
+	}
 	ttl, _ := time.ParseDuration(cfg.Server.SessionTTL)
 	sessions := auth.NewManagerWithCookiePath(store, *secureCookie, ttl, *basePath+"/")
 	hub := realtime.New(sessions.Authenticate, svc.CanReadChannel, svc.CanPostChannel, logger)

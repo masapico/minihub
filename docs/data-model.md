@@ -33,6 +33,7 @@ erDiagram
         datetime ts
         int64 threadRootSeq
         string text
+        json attachments
     }
     READ_STATE {
         string userId PK
@@ -143,6 +144,7 @@ erDiagram
         text mention_ids
         text schedule_id
         text poll_id
+        text attachments
     }
     mention_refs {
         text message_id PK

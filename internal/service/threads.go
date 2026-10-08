@@ -49,7 +49,7 @@ func (s *Service) threadRoot(ctx context.Context, userID, channelID string, root
 	}
 	return s.publicMessage(ctx, channelID, m)
 }
-func (s *Service) PostThreadMessage(ctx context.Context, userID, channelID string, root int64, text string) (domain.Message, error) {
+func (s *Service) PostThreadMessage(ctx context.Context, userID, channelID string, root int64, text string, attachmentIDs ...string) (domain.Message, error) {
 	var committed domain.Message
 	lock := s.channelLock("withdraw:message:" + channelID + ":" + strconv.FormatInt(root, 10))
 	lock.Lock()
@@ -72,11 +72,22 @@ func (s *Service) PostThreadMessage(ctx context.Context, userID, channelID strin
 	if strings.TrimSpace(text) == "" || len([]byte(text)) > MaxMessageBytes {
 		return domain.Message{}, fmt.Errorf("%w: メッセージは空にせず、%dバイト以内にしてください", ErrInvalid, MaxMessageBytes)
 	}
+	var attachments []domain.Attachment
+	if len(attachmentIDs) > 0 {
+		if !hasAIMention(text) {
+			return domain.Message{}, fmt.Errorf("%w: ファイル添付はAIへのメンション（@ai:...）時のみ利用できます", ErrInvalid)
+		}
+		var err error
+		attachments, err = s.consumeStagedAttachments(userID, channelID, attachmentIDs)
+		if err != nil {
+			return domain.Message{}, err
+		}
+	}
 	recipients, err := s.mentionRecipients(ctx, userID, channelID, text)
 	if err != nil {
 		return domain.Message{}, err
 	}
-	m, err := s.storage.AddMessage(ctx, channelID, domain.Message{UserID: userID, Text: text, ThreadRootSeq: root, MentionUserIDs: recipients})
+	m, err := s.storage.AddMessage(ctx, channelID, domain.Message{UserID: userID, Text: text, ThreadRootSeq: root, MentionUserIDs: recipients, Attachments: attachments})
 	if err != nil {
 		return m, err
 	}

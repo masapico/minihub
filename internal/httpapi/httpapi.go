@@ -304,6 +304,13 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					a.leave(w, r, userID, channelID)
 					return
 				}
+			case "attachments":
+				if r.Method == http.MethodPost {
+					a.uploadAttachment(w, r, userID, channelID)
+					return
+				}
+				a.methodNotAllowed(w, http.MethodPost)
+				return
 			case "messages":
 				switch r.Method {
 				case http.MethodGet:
@@ -895,14 +902,40 @@ func (a *API) messages(w http.ResponseWriter, r *http.Request, userID, channelID
 	a.writeJSON(w, http.StatusOK, messages)
 }
 
+func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, userID, channelID string) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		a.writeError(w, fmt.Errorf("%w: アップロードデータを解析できません", service.ErrInvalid))
+		return
+	}
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		a.writeError(w, fmt.Errorf("%w: ファイルが指定されていません", service.ErrInvalid))
+		return
+	}
+	defer file.Close()
+
+	summary, err := a.service.StageAttachment(r.Context(), userID, channelID, header.Filename, file)
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	a.writeJSON(w, http.StatusCreated, summary)
+}
+
 func (a *API) postMessage(w http.ResponseWriter, r *http.Request, userID, channelID string) {
 	var input struct {
-		Text string `json:"text"`
+		Text          string   `json:"text"`
+		AttachmentIDs []string `json:"attachmentIds"`
 	}
 	if !a.decode(w, r, &input) {
 		return
 	}
-	message, err := a.service.PostMessage(r.Context(), userID, channelID, input.Text)
+	message, err := a.service.PostMessage(r.Context(), userID, channelID, input.Text, input.AttachmentIDs...)
 	if err != nil {
 		var committed *service.CommittedMessageError
 		if !errors.As(err, &committed) {

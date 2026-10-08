@@ -121,6 +121,7 @@ type MessageReactions struct {
 type Service struct {
 	ai                 *aiDispatcher
 	storage            storage.Storage
+	attachmentMgr      *AttachmentManager
 	pollMu             sync.Mutex
 	mu                 sync.Mutex
 	userMu             sync.Mutex
@@ -159,7 +160,14 @@ func New(store storage.Storage) *Service {
 }
 
 func NewWithOptions(store storage.Storage, selfPasswordChange bool, mentionRetention time.Duration) *Service {
-	return &Service{storage: store, locks: make(map[string]*sync.Mutex), presenceMembers: make(map[string][]string), selfPasswordChange: selfPasswordChange, mentionRetention: mentionRetention}
+	return &Service{
+		storage:            store,
+		attachmentMgr:      newAttachmentManager(""),
+		locks:              make(map[string]*sync.Mutex),
+		presenceMembers:    make(map[string][]string),
+		selfPasswordChange: selfPasswordChange,
+		mentionRetention:   mentionRetention,
+	}
 }
 
 func (s *Service) SelfPasswordChangeEnabled() bool { return s.selfPasswordChange }
@@ -1113,18 +1121,38 @@ func (s *Service) GetMessages(ctx context.Context, userID, channelID string, que
 	return page, nil
 }
 
-func (s *Service) PostMessage(ctx context.Context, userID, channelID, text string) (domain.Message, error) {
+func hasAIMention(text string) bool {
+	for _, match := range mentionPattern.FindAllStringSubmatch(text, -1) {
+		if match[1] == "ai" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) PostMessage(ctx context.Context, userID, channelID, text string, attachmentIDs ...string) (domain.Message, error) {
 	if err := s.canPost(ctx, userID, channelID); err != nil {
 		return domain.Message{}, err
 	}
 	if strings.TrimSpace(text) == "" || len([]byte(text)) > MaxMessageBytes {
 		return domain.Message{}, fmt.Errorf("%w: メッセージは空にせず、%dバイト以内にしてください", ErrInvalid, MaxMessageBytes)
 	}
+	var attachments []domain.Attachment
+	if len(attachmentIDs) > 0 {
+		if !hasAIMention(text) {
+			return domain.Message{}, fmt.Errorf("%w: ファイル添付はAIへのメンション（@ai:...）時のみ利用できます", ErrInvalid)
+		}
+		var err error
+		attachments, err = s.consumeStagedAttachments(userID, channelID, attachmentIDs)
+		if err != nil {
+			return domain.Message{}, err
+		}
+	}
 	recipients, err := s.mentionRecipients(ctx, userID, channelID, text)
 	if err != nil {
 		return domain.Message{}, err
 	}
-	message, err := s.storage.AddMessage(ctx, channelID, domain.Message{UserID: userID, Text: text, MentionUserIDs: recipients})
+	message, err := s.storage.AddMessage(ctx, channelID, domain.Message{UserID: userID, Text: text, MentionUserIDs: recipients, Attachments: attachments})
 	if err != nil {
 		return domain.Message{}, err
 	}
