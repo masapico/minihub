@@ -22,8 +22,9 @@ function renderThreadStagedAttachments() {
         const chip = document.createElement("div");
         chip.className = "attached-file-chip";
         chip.innerHTML = `<span class="chip-icon">${icon("paperclip")}</span><span class="chip-name"></span><span class="chip-size"></span><button type="button" class="chip-remove" aria-label="添付を解除">&times;</button>`;
-        chip.querySelector(".chip-name").textContent = att.name;
-        chip.querySelector(".chip-size").textContent = formatFileSize(att.size);
+        const fileName = att.filename || att.name || "添付ファイル";
+        chip.querySelector(".chip-name").textContent = fileName;
+        chip.querySelector(".chip-size").textContent = `(${formatFileSize(att.size)})`;
         chip.querySelector(".chip-remove").onclick = () => {
             T.stagedAttachments.splice(i, 1);
             renderThreadStagedAttachments();
@@ -174,6 +175,7 @@ function closeThread(restoreFocus = true) {
     if (S.typingScope?.threadRootSeq) stopTyping();
     T.stagedAttachments = [];
     renderThreadStagedAttachments();
+    syncThreadEditorState();
     if (T.current) {
         T.drafts.set(threadKey(T.current.channel, T.current.root), $("threadInput").value);
         clearTimeout(T.current.readTimer);
@@ -519,7 +521,7 @@ $("threadForm").onsubmit=async event=>{
     try{
         await api(`${threadURL(t)}/messages`,{method:"POST",body:JSON.stringify({text, attachmentIds})});
         if(T.drafts.get(threadKey(t.channel,t.root))?.trim()===text)T.drafts.delete(threadKey(t.channel,t.root));
-        if(T.current===t){$("threadInput").value="";T.stagedAttachments=[];renderThreadStagedAttachments();await loadThreadPage(t,`after=${t.messages.at(-1)?.seq||0}`,"newer");}
+        if(T.current===t){T.stagedAttachments=[];renderThreadStagedAttachments();$("threadInput").value="";syncThreadEditorState();await loadThreadPage(t,`after=${t.messages.at(-1)?.seq||0}`,"newer");}
         scheduleThreadSync();
     }catch(error){if(T.current===t)$("threadStatus").textContent=`送信できません: ${error.message}`;}
     finally{t.sending=false;if(T.current===t){updateThreadControls();$("threadInput").focus();updateOwnTyping();}}

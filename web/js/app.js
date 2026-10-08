@@ -123,8 +123,9 @@ function renderAttachments(attachments) {
         const item = document.createElement("div");
         item.className = "message-attachment-item";
         item.innerHTML = `<span class="message-attachment-icon">${icon("paperclip")}</span><span class="message-attachment-name"></span><span class="message-attachment-size"></span>`;
-        item.querySelector(".message-attachment-name").textContent = att.name;
-        item.querySelector(".message-attachment-size").textContent = formatFileSize(att.size);
+        const fileName = att.filename || att.name || "添付ファイル";
+        item.querySelector(".message-attachment-name").textContent = fileName;
+        item.querySelector(".message-attachment-size").textContent = `(${formatFileSize(att.size)})`;
         container.append(item);
     }
     return container;
@@ -166,8 +167,9 @@ function renderStagedAttachments() {
         const chip = document.createElement("div");
         chip.className = "attached-file-chip";
         chip.innerHTML = `<span class="chip-icon">${icon("paperclip")}</span><span class="chip-name"></span><span class="chip-size"></span><button type="button" class="chip-remove" aria-label="添付を解除">&times;</button>`;
-        chip.querySelector(".chip-name").textContent = att.name;
-        chip.querySelector(".chip-size").textContent = formatFileSize(att.size);
+        const fileName = att.filename || att.name || "添付ファイル";
+        chip.querySelector(".chip-name").textContent = fileName;
+        chip.querySelector(".chip-size").textContent = `(${formatFileSize(att.size)})`;
         chip.querySelector(".chip-remove").onclick = () => {
             S.stagedAttachments.splice(i, 1);
             renderStagedAttachments();
@@ -253,6 +255,7 @@ async function select(id) {
     closeMainMentionMenu();
     S.stagedAttachments = [];
     renderStagedAttachments();
+    syncEditorState();
     S.channel = await api(
         "/api/channels/" + encodeURIComponent(id),
     );
@@ -808,9 +811,10 @@ async function send() {
             { method: "POST", body: JSON.stringify({ text, attachmentIds }) },
         );
 		stopTyping();
-        $("input").value = "";
         S.stagedAttachments = [];
         renderStagedAttachments();
+        $("input").value = "";
+        syncEditorState();
 		advanceLocalRead(channelID, message.seq);
 		api(`/api/channels/${encodeURIComponent(channelID)}/read`, {
 			method: "PUT",
