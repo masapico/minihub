@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{.WorkspaceTitle}}</title>
+  <link rel="stylesheet" href="{{.BasePath}}/vendor/bootstrap/bootstrap.min.css">
+  <style>
+    body { background-color: #f8fafc; font-family: sans-serif; min-height: 100vh; }
+    .navbar { background: #ffffff; border-bottom: 1px solid #e2e8f0; }
+    .app-card { background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 24px; text-decoration: none; color: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: transform 0.15s, box-shadow 0.15s; }
+    .app-card:hover { transform: translateY(-3px); box-shadow: 0 8px 16px rgba(0,0,0,0.06); color: inherit; }
+    .app-icon { width: 48px; height: 48px; margin-bottom: 12px; color: #0d6efd; fill: currentColor; }
+    .app-title { font-weight: 600; font-size: 1.1rem; }
+    .bi-icon { width: 16px; height: 16px; fill: currentColor; vertical-align: -0.125em; }
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg px-4 py-3">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold text-primary" href="{{.BasePath}}/"><svg class="bi-icon me-2" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#shield-lock"></use></svg>{{.WorkspaceTitle}}</a>
+    <div class="d-flex align-items-center gap-3">
+      <span id="userName" class="text-secondary small">読み込み中...</span>
+      <a id="adminLink" href="{{.BasePath}}/admin" class="btn btn-outline-secondary btn-sm d-none"><svg class="bi-icon me-1" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#gear"></use></svg>管理画面</a>
+      <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#pwModal"><svg class="bi-icon me-1" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#key"></use></svg>パスワード変更</button>
+      <button id="logoutBtn" class="btn btn-outline-danger btn-sm"><svg class="bi-icon me-1" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#box-arrow-right"></use></svg>ログアウト</button>
+    </div>
+  </div>
+</nav>
+
+<div class="container py-5">
+  <h4 class="mb-4 text-secondary"><i class="bi bi-grid me-2"></i>社内サービス一覧</h4>
+  <div class="row g-4" id="appList">
+    <div class="col-12 text-muted">読み込み中...</div>
+  </div>
+</div>
+
+<!-- Password Modal -->
+<div class="modal fade" id="pwModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">パスワード変更</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="pwErr" class="alert alert-danger d-none"></div>
+        <div class="mb-3">
+          <label class="form-label">現在のパスワード</label>
+          <input type="password" id="curPw" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">新しいパスワード (8文字以上)</label>
+          <input type="password" id="newPw" class="form-control" required>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="savePwBtn">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{.BasePath}}/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script>
+let csrfToken = "";
+
+async function init() {
+  try {
+    const meRes = await fetch("{{.BasePath}}/api/me");
+    if (!meRes.ok) { location.replace("{{.BasePath}}/login"); return; }
+    const me = await meRes.json();
+    csrfToken = me.csrfToken;
+    document.getElementById("userName").textContent = `${me.name} (${me.userId})`;
+    if (me.role === "admin") {
+      document.getElementById("adminLink").classList.remove("d-none");
+    }
+
+    const appRes = await fetch("{{.BasePath}}/api/portal/apps");
+    const apps = await appRes.json();
+    const appList = document.getElementById("appList");
+    appList.innerHTML = "";
+    if (apps.length === 0) {
+      appList.innerHTML = '<div class="col-12 text-muted">登録されている連携サービスはありません。</div>';
+      return;
+    }
+    apps.forEach(app => {
+      const col = document.createElement("div");
+      col.className = "col-12 col-sm-6 col-md-4 col-lg-3";
+      col.innerHTML = `
+        <a class="app-card" href="${app.launchURL}" target="_blank" rel="noopener">
+          <svg class="app-icon" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#${app.icon || 'box-arrow-up-right'}"></use></svg>
+          <span class="app-title">${app.name}</span>
+          <span class="text-muted small mt-1">開く</span>
+        </a>
+      `;
+      appList.appendChild(col);
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  await fetch("{{.BasePath}}/api/auth/logout", { method: "POST" });
+  location.replace("{{.BasePath}}/login");
+});
+
+document.getElementById("savePwBtn").addEventListener("click", async () => {
+  const err = document.getElementById("pwErr");
+  err.classList.add("d-none");
+  try {
+    const res = await fetch("{{.BasePath}}/api/me/password", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({
+        currentPassword: document.getElementById("curPw").value,
+        newPassword: document.getElementById("newPw").value
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "変更に失敗しました");
+    alert("パスワードを変更しました。");
+    bootstrap.Modal.getInstance(document.getElementById("pwModal")).hide();
+    document.getElementById("curPw").value = "";
+    document.getElementById("newPw").value = "";
+  } catch (e) {
+    err.textContent = e.message;
+    err.classList.remove("d-none");
+  }
+});
+
+init();
+</script>
+</body>
+</html>
+

@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>管理画面 · {{.WorkspaceTitle}}</title>
+  <link rel="stylesheet" href="{{.BasePath}}/vendor/bootstrap/bootstrap.min.css">
+  <style>
+    body { background-color: #f8fafc; font-family: sans-serif; min-height: 100vh; }
+    .navbar { background: #ffffff; border-bottom: 1px solid #e2e8f0; }
+    .card { border-radius: 8px; border: 1px solid #e2e8f0; }
+    .bi-icon { width: 16px; height: 16px; fill: currentColor; vertical-align: -0.125em; }
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg px-4 py-3">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold text-primary" href="{{.BasePath}}/"><svg class="bi-icon me-2" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#shield-lock"></use></svg>{{.WorkspaceTitle}}</a>
+    <div class="d-flex align-items-center gap-3">
+      <a href="{{.BasePath}}/" class="btn btn-outline-secondary btn-sm"><svg class="bi-icon me-1" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#house"></use></svg>ポータルへ戻る</a>
+      <button id="logoutBtn" class="btn btn-outline-danger btn-sm"><svg class="bi-icon me-1" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#box-arrow-right"></use></svg>ログアウト</button>
+    </div>
+  </div>
+</nav>
+
+<div class="container py-4">
+  <h3 class="mb-4">組織・ユーザー統合管理</h3>
+  <ul class="nav nav-tabs mb-4" id="adminTabs">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#userTab">ユーザー一覧</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#bulkTab">ユーザー一括登録</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#groupTab">グループ管理</button></li>
+  </ul>
+
+  <div class="tab-content">
+    <!-- User Tab -->
+    <div class="tab-pane fade show active" id="userTab">
+      <div class="d-flex justify-content-between mb-3">
+        <input type="text" id="userSearch" class="form-control w-25" placeholder="検索 (IDまたは名前)">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newUserModal"><i class="bi bi-person-plus me-1"></i>新規ユーザー作成</button>
+      </div>
+      <div class="card p-0">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>表示名</th>
+              <th>権限</th>
+              <th>所属グループ</th>
+              <th>状態</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="userTableBody">
+            <tr><td colspan="6" class="text-center text-muted py-4">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Bulk Tab -->
+    <div class="tab-pane fade" id="bulkTab">
+      <div class="card p-4">
+        <h5>タブ区切りでユーザーを一括登録</h5>
+        <p class="text-muted small">形式: <code>ID ⇥ 表示名 ⇥ 初期パスワード ⇥ 権限(user/admin) ⇥ 所属グループ(カンマ区切り)</code></p>
+        <textarea id="bulkText" class="form-control mb-3" rows="8" placeholder="u001&#9;佐藤 太郎&#9;password123&#9;user&#9;sales&#10;u002&#9;鈴木 花子&#9;password123&#9;admin&#9;dev,infra"></textarea>
+        <div>
+          <button class="btn btn-success" id="bulkBtn">一括登録を実行</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Group Tab -->
+    <div class="tab-pane fade" id="groupTab">
+      <div class="d-flex justify-content-between mb-3">
+        <div class="text-muted">組織・所属グループの定義</div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newGroupModal"><i class="bi bi-folder-plus me-1"></i>新規グループ作成</button>
+      </div>
+      <div class="card p-0">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>グループID</th>
+              <th>グループ名</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="groupTableBody">
+            <tr><td colspan="3" class="text-center text-muted py-4">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New User Modal -->
+<div class="modal fade" id="newUserModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">新規ユーザー登録</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">ユーザーID</label>
+          <input type="text" id="newUid" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">表示名</label>
+          <input type="text" id="newName" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">初期パスワード (8文字以上)</label>
+          <input type="password" id="newUpass" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">権限</label>
+          <select id="newRole" class="form-select">
+            <option value="user">一般ユーザー (user)</option>
+            <option value="admin">システム管理者 (admin)</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">所属グループ (カンマ区切り)</label>
+          <input type="text" id="newGroups" class="form-control" placeholder="例: sales, dev">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="createUserBtn">作成</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">ユーザー編集</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">ユーザーID</label>
+          <input type="text" id="editUid" class="form-control" disabled>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">表示名</label>
+          <input type="text" id="editName" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">パスワード変更 (変更する場合のみ入力)</label>
+          <input type="password" id="editPass" class="form-control" placeholder="8文字以上">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">権限</label>
+          <select id="editRole" class="form-select">
+            <option value="user">一般ユーザー (user)</option>
+            <option value="admin">システム管理者 (admin)</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">所属グループ (カンマ区切り)</label>
+          <input type="text" id="editGroups" class="form-control">
+        </div>
+        <div class="form-check">
+          <input type="checkbox" id="editEnabled" class="form-check-input">
+          <label class="form-check-label" for="editEnabled">アカウントを有効にする</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="saveUserBtn">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Group Modal -->
+<div class="modal fade" id="newGroupModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">新規グループ作成</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">グループID</label>
+          <input type="text" id="newGid" class="form-control" required placeholder="例: dev">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">グループ名</label>
+          <input type="text" id="newGname" class="form-control" required placeholder="例: 開発部">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="createGroupBtn">作成</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{.BasePath}}/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script>
+let csrfToken = "";
+let allUsers = [];
+
+async function loadData() {
+  const meRes = await fetch("{{.BasePath}}/api/me");
+  if (!meRes.ok) { location.replace("{{.BasePath}}/login"); return; }
+  const me = await meRes.json();
+  if (me.role !== "admin") { alert("管理者権限がありません"); location.replace("{{.BasePath}}/"); return; }
+  csrfToken = me.csrfToken;
+
+  await loadUsers();
+  await loadGroups();
+}
+
+async function loadUsers() {
+  const res = await fetch("{{.BasePath}}/api/admin/users");
+  allUsers = await res.json();
+  renderUsers(allUsers);
+}
+
+function renderUsers(users) {
+  const tbody = document.getElementById("userTableBody");
+  tbody.innerHTML = "";
+  users.forEach(u => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><code>${u.id}</code></td>
+      <td><strong>${u.name}</strong></td>
+      <td><span class="badge ${u.role === 'admin' ? 'bg-danger' : 'bg-secondary'}">${u.role}</span></td>
+      <td>${(u.groups || []).join(", ") || "-"}</td>
+      <td><span class="badge ${u.enabled ? 'bg-success' : 'bg-secondary'}">${u.enabled ? '有効' : '無効'}</span></td>
+      <td><button class="btn btn-sm btn-outline-primary edit-user-btn" data-id="${u.id}"><i class="bi bi-pencil"></i> 編集</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  document.querySelectorAll(".edit-user-btn").forEach(btn => {
+    btn.addEventListener("click", () => openEditUser(btn.dataset.id));
+  });
+}
+
+function openEditUser(id) {
+  const u = allUsers.find(x => x.id === id);
+  if (!u) return;
+  document.getElementById("editUid").value = u.id;
+  document.getElementById("editName").value = u.name;
+  document.getElementById("editPass").value = "";
+  document.getElementById("editRole").value = u.role;
+  document.getElementById("editGroups").value = (u.groups || []).join(", ");
+  document.getElementById("editEnabled").checked = u.enabled;
+  new bootstrap.Modal(document.getElementById("editUserModal")).show();
+}
+
+async function loadGroups() {
+  const res = await fetch("{{.BasePath}}/api/admin/groups");
+  const groups = await res.json();
+  const tbody = document.getElementById("groupTableBody");
+  tbody.innerHTML = "";
+  groups.forEach(g => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><code>${g.id}</code></td>
+      <td><strong>${g.name}</strong></td>
+      <td><button class="btn btn-sm btn-outline-danger del-group-btn" data-id="${g.id}"><i class="bi bi-trash"></i> 削除</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  document.querySelectorAll(".del-group-btn").forEach(btn => {
+    btn.addEventListener("click", () => deleteGroup(btn.dataset.id));
+  });
+}
+
+async function deleteGroup(id) {
+  if (!confirm(`グループ "${id}" を削除しますか？`)) return;
+  await fetch(`{{.BasePath}}/api/admin/groups?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { "X-CSRF-Token": csrfToken }
+  });
+  loadGroups();
+}
+
+document.getElementById("createUserBtn").addEventListener("click", async () => {
+  const groups = document.getElementById("newGroups").value.split(",").map(s => s.trim()).filter(Boolean);
+  const res = await fetch("{{.BasePath}}/api/admin/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+    body: JSON.stringify({
+      id: document.getElementById("newUid").value,
+      name: document.getElementById("newName").value,
+      password: document.getElementById("newUpass").value,
+      role: document.getElementById("newRole").value,
+      groups: groups
+    })
+  });
+  if (!res.ok) { const d = await res.json(); alert(d.error || "作成失敗"); return; }
+  bootstrap.Modal.getInstance(document.getElementById("newUserModal")).hide();
+  loadUsers();
+});
+
+document.getElementById("saveUserBtn").addEventListener("click", async () => {
+  const groups = document.getElementById("editGroups").value.split(",").map(s => s.trim()).filter(Boolean);
+  const res = await fetch("{{.BasePath}}/api/admin/users", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+    body: JSON.stringify({
+      id: document.getElementById("editUid").value,
+      name: document.getElementById("editName").value,
+      password: document.getElementById("editPass").value,
+      role: document.getElementById("editRole").value,
+      groups: groups,
+      enabled: document.getElementById("editEnabled").checked
+    })
+  });
+  if (!res.ok) { const d = await res.json(); alert(d.error || "保存失敗"); return; }
+  bootstrap.Modal.getInstance(document.getElementById("editUserModal")).hide();
+  loadUsers();
+});
+
+document.getElementById("createGroupBtn").addEventListener("click", async () => {
+  const res = await fetch("{{.BasePath}}/api/admin/groups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+    body: JSON.stringify({
+      id: document.getElementById("newGid").value,
+      name: document.getElementById("newGname").value
+    })
+  });
+  if (!res.ok) { const d = await res.json(); alert(d.error || "作成失敗"); return; }
+  bootstrap.Modal.getInstance(document.getElementById("newGroupModal")).hide();
+  loadGroups();
+});
+
+document.getElementById("bulkBtn").addEventListener("click", async () => {
+  const text = document.getElementById("bulkText").value;
+  const res = await fetch("{{.BasePath}}/api/admin/users/bulk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+    body: JSON.stringify({ text: text })
+  });
+  const data = await res.json();
+  alert(`${data.created || 0} 件のユーザーを登録しました。`);
+  document.getElementById("bulkText").value = "";
+  loadUsers();
+});
+
+document.getElementById("userSearch").addEventListener("input", (e) => {
+  const q = e.target.value.toLowerCase();
+  const filtered = allUsers.filter(u => u.id.toLowerCase().includes(q) || u.name.toLowerCase().includes(q));
+  renderUsers(filtered);
+});
+
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  await fetch("{{.BasePath}}/api/auth/logout", { method: "POST" });
+  location.replace("{{.BasePath}}/login");
+});
+
+loadData();
+</script>
+</body>
+</html>
+

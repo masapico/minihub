@@ -12,6 +12,11 @@ import (
 //go:embed index.html login.html schedule.html favicon.ico favicon.svg css js vendor
 var files embed.FS
 
+// Files returns the embedded file system containing vendor assets.
+func Files() embed.FS {
+	return files
+}
+
 var pages = template.Must(template.ParseFS(files, "index.html", "login.html", "schedule.html"))
 
 type Authenticator interface {
@@ -25,6 +30,7 @@ type handler struct {
 	loginPage    []byte
 	schedulePage []byte
 	basePath     string
+	ssoMode      bool
 }
 
 type Options struct {
@@ -33,6 +39,8 @@ type Options struct {
 	WorkspaceTitle         string
 	LoginMessage           string
 	NetworkPathMode        string
+	SSOMode                bool
+	MiniAuthURL            string
 }
 
 func Handler(auth Authenticator, options ...Options) http.Handler {
@@ -52,9 +60,12 @@ func Handler(auth Authenticator, options ...Options) http.Handler {
 		if options[0].NetworkPathMode != "" {
 			settings.NetworkPathMode = options[0].NetworkPathMode
 		}
+		settings.SSOMode = options[0].SSOMode
+		settings.MiniAuthURL = options[0].MiniAuthURL
 	}
 	return &handler{
 		basePath:     settings.BasePath,
+		ssoMode:      settings.SSOMode,
 		auth:         auth,
 		static:       http.FileServer(http.FS(files)),
 		indexPage:    renderPage("index.html", settings),
@@ -96,6 +107,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/login":
 		if _, err := h.auth.Authenticate(r); err == nil {
 			http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+			return
+		}
+		if h.ssoMode {
+			next := r.URL.Query().Get("next")
+			loginURL := h.basePath + "/api/auth/sso/login"
+			if next != "" {
+				loginURL += "?next=" + url.QueryEscape(next)
+			}
+			http.Redirect(w, r, loginURL, http.StatusFound)
 			return
 		}
 		servePage(w, r, h.loginPage)

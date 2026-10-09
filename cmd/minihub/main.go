@@ -18,6 +18,7 @@ import (
 	"github.com/masapico/minihub/internal/auth"
 	"github.com/masapico/minihub/internal/bootstrap"
 	"github.com/masapico/minihub/internal/config"
+	"github.com/masapico/minihub/internal/directorysync"
 	"github.com/masapico/minihub/internal/httpapi"
 	"github.com/masapico/minihub/internal/realtime"
 	"github.com/masapico/minihub/internal/service"
@@ -143,10 +144,30 @@ func run() (runErr error) {
 		return err
 	}
 	defer svc.CloseAI()
+	if cfg.Auth.Mode == "sso" {
+		syncInterval, _ := time.ParseDuration(cfg.Auth.MiniAuth.SyncInterval)
+		syncer := directorysync.NewSyncer(cfg.Auth.MiniAuth.URL, cfg.Auth.MiniAuth.ServiceToken, store, logger)
+		syncer.StartLoop(ctx, syncInterval)
+	}
+	apiHandler := httpapi.New(svc, sessions, logger)
+	if cfg.Auth.Mode == "sso" {
+		ssoHandler := httpapi.NewSSOHandler(cfg.Auth.MiniAuth, *basePath, store, sessions)
+		if apiImpl, ok := apiHandler.(*httpapi.API); ok {
+			apiImpl.SetSSOHandler(ssoHandler)
+		}
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/realtime", hub)
-	mux.Handle("/api/", httpapi.New(svc, sessions, logger))
-	mux.Handle("/", web.Handler(sessions, web.Options{BasePath: *basePath, WorkspaceTitle: cfg.UI.WorkspaceTitle, LoginMessage: cfg.UI.LoginMessage, NetworkPathMode: cfg.Features.NetworkPathMode, OSNotificationsEnabled: &cfg.Notifications.OSNotificationsEnabled}))
+	mux.Handle("/api/", apiHandler)
+	mux.Handle("/", web.Handler(sessions, web.Options{
+		BasePath:               *basePath,
+		WorkspaceTitle:         cfg.UI.WorkspaceTitle,
+		LoginMessage:           cfg.UI.LoginMessage,
+		NetworkPathMode:        cfg.Features.NetworkPathMode,
+		OSNotificationsEnabled: &cfg.Notifications.OSNotificationsEnabled,
+		SSOMode:                cfg.Auth.Mode == "sso",
+		MiniAuthURL:            cfg.Auth.MiniAuth.URL,
+	}))
 	server := &http.Server{Addr: *addr, Handler: web.Mount(*basePath, mux), ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	server.TLSConfig = tlsConfig
 	scheme := "http"

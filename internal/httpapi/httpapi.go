@@ -51,6 +51,7 @@ type API struct {
 	service *service.Service
 	auth    Authenticator
 	logger  *slog.Logger
+	sso     *SSOHandler
 }
 
 func New(svc *service.Service, auth Authenticator, logger *slog.Logger) http.Handler {
@@ -60,8 +61,22 @@ func New(svc *service.Service, auth Authenticator, logger *slog.Logger) http.Han
 	return &API{service: svc, auth: auth, logger: logger}
 }
 
+func (a *API) SetSSOHandler(sso *SSOHandler) {
+	a.sso = sso
+}
+
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if a.sso != nil {
+		if r.URL.Path == "/api/auth/sso/login" && r.Method == http.MethodGet {
+			a.sso.HandleLogin(w, r)
+			return
+		}
+		if r.URL.Path == "/api/auth/sso/callback" && r.Method == http.MethodGet {
+			a.sso.HandleCallback(w, r)
+			return
+		}
+	}
 	if r.URL.Path == "/api/auth/login" && r.Method == http.MethodPost {
 		a.login(w, r)
 		return

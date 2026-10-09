@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ログイン · {{.WorkspaceTitle}}</title>
+  <link rel="stylesheet" href="{{.BasePath}}/vendor/bootstrap/bootstrap.min.css">
+  <style>
+    body { background-color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: sans-serif; }
+    .card { width: 100%; max-width: 400px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: none; }
+  </style>
+</head>
+<body>
+<div class="card p-4">
+  <h3 class="mb-2 text-center">{{.WorkspaceTitle}}</h3>
+  <p class="text-muted text-center small mb-4">{{.LoginMessage}}</p>
+  <div id="errMsg" class="alert alert-danger d-none" role="alert"></div>
+  <form id="loginForm">
+    <div class="mb-3">
+      <label class="form-label" for="uid">ユーザーID</label>
+      <input class="form-control" id="uid" name="uid" autofocus required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="pw">パスワード</label>
+      <input class="form-control" id="pw" name="pw" type="password" required>
+    </div>
+    <button class="btn btn-primary w-100 py-2 mt-2" type="submit" id="btnSubmit">ログイン</button>
+  </form>
+</div>
+<script>
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("btnSubmit");
+  const err = document.getElementById("errMsg");
+  btn.disabled = true;
+  err.classList.add("d-none");
+  try {
+    const res = await fetch("{{.BasePath}}/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: document.getElementById("uid").value, password: document.getElementById("pw").value })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "ログインに失敗しました");
+    const next = new URLSearchParams(location.search).get("next");
+    if (next) {
+      location.replace(next);
+    } else {
+      location.replace("{{.BasePath}}/");
+    }
+  } catch (error) {
+    err.textContent = error.message;
+    err.classList.remove("d-none");
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
+

@@ -23,6 +23,7 @@ type Config struct {
 	Retention     Retention     `json:"retention"`
 	Logging       Logging       `json:"logging"`
 	InitialAdmin  *InitialAdmin `json:"initialAdmin,omitempty"`
+	Auth          AuthConfig    `json:"auth,omitempty"`
 }
 type Storage struct {
 	Type string `json:"type"`
@@ -63,6 +64,17 @@ type InitialAdmin struct {
 	Name     string `json:"name"`
 	Password string `json:"password"`
 }
+type AuthConfig struct {
+	Mode     string         `json:"mode,omitempty"`
+	MiniAuth MiniAuthConfig `json:"miniauth,omitempty"`
+}
+type MiniAuthConfig struct {
+	URL          string `json:"url"`
+	ClientID     string `json:"clientID"`
+	ClientSecret string `json:"clientSecret"`
+	ServiceToken string `json:"serviceToken,omitempty"`
+	SyncInterval string `json:"syncInterval,omitempty"`
+}
 
 const DefaultFilename = "minihub.json"
 
@@ -78,6 +90,7 @@ func Defaults() Config {
 		Features:      Features{NetworkPathMode: "copy"},
 		Notifications: Notifications{MentionRetentionDays: 365, OSNotificationsEnabled: true},
 		Logging:       Logging{Level: "info"},
+		Auth:          AuthConfig{Mode: "local"},
 	}
 }
 
@@ -163,6 +176,24 @@ func Load(path string, explicit bool) (Config, bool, error) {
 	if cfg.Features.NetworkPathMode != "disabled" && cfg.Features.NetworkPathMode != "copy" && cfg.Features.NetworkPathMode != "open-and-copy" {
 		return cfg, false, errors.New("features.networkPathMode must be disabled, copy, or open-and-copy")
 	}
+	if cfg.Auth.Mode == "" {
+		cfg.Auth.Mode = "local"
+	}
+	if cfg.Auth.Mode != "local" && cfg.Auth.Mode != "sso" {
+		return cfg, false, errors.New("auth.mode must be local or sso")
+	}
+	if cfg.Auth.Mode == "sso" {
+		if cfg.Auth.MiniAuth.URL == "" || cfg.Auth.MiniAuth.ClientID == "" || cfg.Auth.MiniAuth.ClientSecret == "" {
+			return cfg, false, errors.New("auth.miniauth url, clientID, and clientSecret are required when auth.mode is sso")
+		}
+		cfg.Auth.MiniAuth.URL = strings.TrimSuffix(cfg.Auth.MiniAuth.URL, "/")
+		if cfg.Auth.MiniAuth.SyncInterval == "" {
+			cfg.Auth.MiniAuth.SyncInterval = "10m"
+		}
+		if _, err := time.ParseDuration(cfg.Auth.MiniAuth.SyncInterval); err != nil {
+			return cfg, false, fmt.Errorf("invalid auth.miniauth.syncInterval: %w", err)
+		}
+	}
 	secretField := ""
 	if cfg.InitialAdmin != nil && cfg.InitialAdmin.Password != "" {
 		secretField = "initialAdmin.password"
@@ -172,6 +203,9 @@ func Load(path string, explicit bool) (Config, bool, error) {
 			secretField = "aiAccounts.token"
 			break
 		}
+	}
+	if cfg.Auth.MiniAuth.ClientSecret != "" {
+		secretField = "auth.miniauth.clientSecret"
 	}
 	if secretField != "" {
 		if runtime.GOOS != "windows" {

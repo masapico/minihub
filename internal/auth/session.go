@@ -80,6 +80,10 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, userID, password
 		m.recordFailure(key)
 		return "", "", ErrInvalidCredentials
 	}
+	return m.EstablishSession(w, r, user)
+}
+
+func (m *Manager) EstablishSession(w http.ResponseWriter, r *http.Request, user *domain.User) (string, string, error) {
 	token, err := randomToken()
 	if err != nil {
 		return "", "", err
@@ -90,6 +94,7 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, userID, password
 	}
 	now := time.Now()
 	m.mu.Lock()
+	key := remoteHost(r.RemoteAddr) + "|" + user.ID
 	delete(m.failures, key)
 	hash := tokenHash(token)
 	current := session{UserID: user.ID, CSRFToken: csrf, ExpiresAt: now.Add(m.ttl), AuthGeneration: user.AuthGeneration}

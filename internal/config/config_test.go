@@ -165,3 +165,27 @@ func TestPlainCredentialsRequirePrivatePermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestAuthConfig(t *testing.T) {
+	dir := t.TempDir()
+	validSSO := `{"version":1,"auth":{"mode":"sso","miniauth":{"url":"http://127.0.0.1:8090","clientID":"chat","clientSecret":"secret"}}}`
+	path := filepath.Join(dir, "valid.json")
+	if err := os.WriteFile(path, []byte(validSSO), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(path, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Auth.Mode != "sso" || cfg.Auth.MiniAuth.URL != "http://127.0.0.1:8090" || cfg.Auth.MiniAuth.SyncInterval != "10m" {
+		t.Errorf("unexpected config: %+v", cfg.Auth)
+	}
+
+	invalidSSO := `{"version":1,"auth":{"mode":"sso","miniauth":{"url":"http://127.0.0.1:8090"}}}`
+	pathInv := filepath.Join(dir, "invalid.json")
+	_ = os.WriteFile(pathInv, []byte(invalidSSO), 0o600)
+	if _, _, err := Load(pathInv, true); err == nil {
+		t.Error("expected error for missing clientID/clientSecret, got nil")
+	}
+}
+
