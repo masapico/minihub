@@ -787,7 +787,11 @@ function realtime() {
 $("logout").onclick = async () => {
     try {
         await api("/api/auth/logout", { method: "POST" });
-        location.replace(Minihub.url("/login"));
+        if (document.body.dataset.ssoMode === "true" && document.body.dataset.miniauthUrl) {
+            location.replace(document.body.dataset.miniauthUrl);
+        } else {
+            location.replace(Minihub.url("/login"));
+        }
     } catch (error) {
         note("ログアウトできません: " + error.message, true);
     }

@@ -14,9 +14,9 @@ import (
 
 	"github.com/masapico/minihub/internal/auth"
 	"github.com/masapico/minihub/internal/authserver"
+	"github.com/masapico/minihub/internal/authstorage"
 	"github.com/masapico/minihub/internal/bootstrap"
 	"github.com/masapico/minihub/internal/shutdown"
-	"github.com/masapico/minihub/internal/storage/backend"
 	authweb "github.com/masapico/minihub/web/auth"
 )
 
@@ -61,7 +61,7 @@ func run() error {
 		return fmt.Errorf("create data directory: %w", err)
 	}
 
-	store, err := backend.Open(*dataDir, cfg.Storage.Type)
+	store, err := authstorage.Open(*dataDir, cfg.Storage.Type)
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
@@ -94,7 +94,7 @@ func run() error {
 	}
 
 	ttl, _ := time.ParseDuration(cfg.Server.SessionTTL)
-	sessions := auth.NewManagerWithCookiePath(store, cfg.Server.SecureCookie, ttl, cfg.Server.BasePath+"/")
+	sessions := auth.NewManagerWithCookieConfig(store, cfg.Server.SecureCookie, ttl, cfg.Server.BasePath+"/", "miniauth_session", http.SameSiteLaxMode)
 
 	srv := authserver.NewServer(cfg, store, sessions, logger)
 	apiRoutes := srv.Routes()

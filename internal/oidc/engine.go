@@ -111,6 +111,18 @@ func (e *Engine) ListClients() []Client {
 	return list
 }
 
+func (e *Engine) RegisterClient(c Client) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.clients[c.ID] = c
+}
+
+func (e *Engine) DeleteClient(id string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.clients, id)
+}
+
 func (e *Engine) CreateAuthCode(clientID, userID, redirectURI, scope, state string) (string, error) {
 	bytes := make([]byte, 24)
 	if _, err := rand.Read(bytes); err != nil {

@@ -12,17 +12,18 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/masapico/minihub/internal/auth"
+	"github.com/masapico/minihub/internal/authstorage"
 	"github.com/masapico/minihub/internal/domain"
 	"github.com/masapico/minihub/internal/oidc"
-	"github.com/masapico/minihub/internal/storage/filestore"
 )
 
 func TestAuthServer_OIDCAndDirectory(t *testing.T) {
 	tempDir := t.TempDir()
-	store, err := filestore.New(tempDir)
+	store, err := authstorage.Open(tempDir, "file")
 	if err != nil {
-		t.Fatalf("filestore.New failed: %v", err)
+		t.Fatalf("authstorage.Open failed: %v", err)
 	}
+	defer store.Close()
 
 	// Seed user
 	hash, _ := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
@@ -159,5 +160,53 @@ func TestAuthServer_OIDCAndDirectory(t *testing.T) {
 	}
 	if userinfoResp.Sub != "u001" || userinfoResp.Name != "Test User" || userinfoResp.Role != "admin" {
 		t.Errorf("unexpected userinfo response: %+v", userinfoResp)
+	}
+
+	// 6. Test Admin Client CRUD
+	// Authenticate admin session
+	var loginResp struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	_ = json.NewDecoder(loginRec.Body).Decode(&loginResp)
+
+	// Add dynamic client
+	newClientPayload := `{"id":"wiki","name":"Wiki","secret":"wiki-secret","redirectURIs":["http://wiki.local/callback"],"launchURL":"http://wiki.local"}`
+	createReq := httptest.NewRequest(http.MethodPost, "/api/admin/clients", strings.NewReader(newClientPayload))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-CSRF-Token", loginResp.CSRFToken)
+	createReq.AddCookie(sessionCookie)
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create client failed: %d: %s", createRec.Code, createRec.Body.String())
+	}
+
+	// Verify client is returned in portal apps
+	portalReq := httptest.NewRequest(http.MethodGet, "/api/portal/apps", nil)
+	portalReq.AddCookie(sessionCookie)
+	portalRec := httptest.NewRecorder()
+	handler.ServeHTTP(portalRec, portalReq)
+	if portalRec.Code != http.StatusOK {
+		t.Fatalf("portal apps failed: %d", portalRec.Code)
+	}
+	if !strings.Contains(portalRec.Body.String(), "wiki") {
+		t.Fatalf("portal apps should contain wiki: %s", portalRec.Body.String())
+	}
+
+	// Delete client
+	delReq := httptest.NewRequest(http.MethodDelete, "/api/admin/clients?id=wiki", nil)
+	delReq.Header.Set("X-CSRF-Token", loginResp.CSRFToken)
+	delReq.AddCookie(sessionCookie)
+	delRec := httptest.NewRecorder()
+	handler.ServeHTTP(delRec, delReq)
+	if delRec.Code != http.StatusNoContent {
+		t.Fatalf("delete client failed: %d", delRec.Code)
+	}
+
+	// Verify client is removed
+	portalRec2 := httptest.NewRecorder()
+	handler.ServeHTTP(portalRec2, portalReq)
+	if strings.Contains(portalRec2.Body.String(), "wiki") {
+		t.Fatalf("portal apps should not contain wiki after delete: %s", portalRec2.Body.String())
 	}
 }

@@ -171,3 +171,51 @@ func TestAuthenticationGenerationInvalidatesOldSession(t *testing.T) {
 		t.Fatal("old session survived password generation change")
 	}
 }
+
+func TestCustomCookieConfig(t *testing.T) {
+	root := t.TempDir()
+	store, err := filestore.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := bcrypt.GenerateFromPassword([]byte("pass1234"), bcrypt.MinCost)
+	user := &domain.User{ID: "bob", Name: "Bob", Role: domain.RoleUser, Enabled: true, PasswordHash: string(hash)}
+	if err := store.SaveUser(context.Background(), user); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := auth.NewManagerWithCookieConfig(store, false, time.Hour, "/", "miniauth_session", http.SameSiteLaxMode)
+	if mgr.CookieName() != "miniauth_session" {
+		t.Fatalf("expected miniauth_session, got %s", mgr.CookieName())
+	}
+	if mgr.SameSite() != http.SameSiteLaxMode {
+		t.Fatalf("expected SameSiteLaxMode, got %v", mgr.SameSite())
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	rec := httptest.NewRecorder()
+	if _, _, err := mgr.Login(rec, req, "bob", "pass1234"); err != nil {
+		t.Fatal(err)
+	}
+
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected 1 cookie, got %d", len(cookies))
+	}
+	c := cookies[0]
+	if c.Name != "miniauth_session" {
+		t.Errorf("cookie name = %s, expected miniauth_session", c.Name)
+	}
+	if c.SameSite != http.SameSiteLaxMode {
+		t.Errorf("cookie SameSite = %v, expected Lax", c.SameSite)
+	}
+
+	// Test authentication
+	authReq := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	authReq.AddCookie(c)
+	uid, err := mgr.Authenticate(authReq)
+	if err != nil || uid != "bob" {
+		t.Fatalf("auth failed: uid=%s, err=%v", uid, err)
+	}
+}
+

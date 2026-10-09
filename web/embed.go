@@ -99,6 +99,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/":
 		if _, err := h.auth.Authenticate(r); err != nil {
+			if h.ssoMode {
+				loginURL := h.basePath + "/api/auth/sso/login"
+				if r.URL.RawQuery != "" {
+					loginURL += "?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, loginURL, http.StatusFound)
+				return
+			}
 			http.Redirect(w, r, h.basePath+"/login", http.StatusFound)
 			return
 		}
@@ -131,7 +139,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := h.auth.Authenticate(r); err != nil {
-			http.Redirect(w, r, h.basePath+"/login?next="+url.QueryEscape(h.basePath+r.URL.RequestURI()), http.StatusFound)
+			loginTarget := h.basePath + "/login?next=" + url.QueryEscape(h.basePath+r.URL.RequestURI())
+			if h.ssoMode {
+				loginTarget = h.basePath + "/api/auth/sso/login?next=" + url.QueryEscape(h.basePath+r.URL.RequestURI())
+			}
+			http.Redirect(w, r, loginTarget, http.StatusFound)
 			return
 		}
 		servePage(w, r, h.schedulePage)

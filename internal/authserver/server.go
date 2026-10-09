@@ -13,27 +13,45 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"context"
+
 	"github.com/masapico/minihub/internal/auth"
+	"github.com/masapico/minihub/internal/authstorage"
 	"github.com/masapico/minihub/internal/domain"
 	"github.com/masapico/minihub/internal/oidc"
-	"github.com/masapico/minihub/internal/storage"
 )
 
 type Server struct {
 	cfg          Config
-	store        storage.Storage
+	store        authstorage.Storage
 	sessions     *auth.Manager
 	oidc         *oidc.Engine
 	logger       *slog.Logger
 	serviceToken string
 }
 
-func NewServer(cfg Config, store storage.Storage, sessions *auth.Manager, logger *slog.Logger) *Server {
+func NewServer(cfg Config, store authstorage.Storage, sessions *auth.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	jwtSecret := []byte(cfg.OIDC.JWTSecret)
-	engine := oidc.NewEngine(cfg.OIDC.Issuer, jwtSecret, cfg.Clients)
+	engine := oidc.NewEngine(cfg.OIDC.Issuer, jwtSecret, nil)
+
+	// Load existing clients from store
+	savedClients, err := store.ListClients(context.Background())
+	if err == nil {
+		for _, c := range savedClients {
+			engine.RegisterClient(*c)
+		}
+	}
+	// Import config clients if not already present
+	for _, c := range cfg.Clients {
+		if _, err := store.GetClient(context.Background(), c.ID); err != nil {
+			clientCopy := c
+			_ = store.SaveClient(context.Background(), &clientCopy)
+			engine.RegisterClient(clientCopy)
+		}
+	}
 
 	return &Server{
 		cfg:          cfg,
@@ -68,6 +86,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/admin/users", s.handleAdminUsers)
 	mux.HandleFunc("/api/admin/users/bulk", s.handleAdminUsersBulk)
 	mux.HandleFunc("/api/admin/groups", s.handleAdminGroups)
+	mux.HandleFunc("/api/admin/clients", s.handleAdminClients)
 
 	return mux
 }
@@ -450,7 +469,11 @@ func (s *Server) handlePortalApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clients := s.oidc.ListClients()
+	clients, err := s.store.ListClients(r.Context())
+	if err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
 	type AppItem struct {
 		ID        string `json:"id"`
 		Name      string `json:"name"`
@@ -720,6 +743,86 @@ func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = s.store.DeleteGroup(r.Context(), groupID)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// Admin Clients CRUD
+func (s *Server) handleAdminClients(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.sessions.Authenticate(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	adminUser, _ := s.store.GetUser(r.Context(), userID)
+	if adminUser.Role != domain.RoleAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		clients, err := s.store.ListClients(r.Context())
+		if err != nil {
+			http.Error(w, "failed to list clients", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, clients)
+	case http.MethodPost:
+		if !s.sessions.ValidateCSRF(r) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "セキュリティトークンが無効です"})
+			return
+		}
+		var req oidc.Client
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "リクエストを読み取れませんでした"})
+			return
+		}
+		req.ID = strings.TrimSpace(req.ID)
+		req.Name = strings.TrimSpace(req.Name)
+		req.Secret = strings.TrimSpace(req.Secret)
+		req.LaunchURL = strings.TrimSpace(req.LaunchURL)
+		req.Icon = strings.TrimSpace(req.Icon)
+		if req.ID == "" || req.Name == "" || req.Secret == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "クライアントID、名前、シークレットを入力してください"})
+			return
+		}
+		cleanURIs := make([]string, 0, len(req.RedirectURIs))
+		for _, u := range req.RedirectURIs {
+			u = strings.TrimSpace(u)
+			if u != "" {
+				cleanURIs = append(cleanURIs, u)
+			}
+		}
+		if len(cleanURIs) == 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "リダイレクトURIを少なくとも1つ入力してください"})
+			return
+		}
+		req.RedirectURIs = cleanURIs
+
+		if err := s.store.SaveClient(r.Context(), &req); err != nil {
+			http.Error(w, "failed to save client", http.StatusInternalServerError)
+			return
+		}
+		s.oidc.RegisterClient(req)
+		writeJSON(w, http.StatusCreated, req)
+	case http.MethodDelete:
+		if !s.sessions.ValidateCSRF(r) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "セキュリティトークンが無効です"})
+			return
+		}
+		clientID := strings.TrimSpace(r.URL.Query().Get("id"))
+		if clientID == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+		if err := s.store.DeleteClient(r.Context(), clientID); err != nil {
+			http.Error(w, "failed to delete client", http.StatusInternalServerError)
+			return
+		}
+		s.oidc.DeleteClient(clientID)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

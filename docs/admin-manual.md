@@ -2,11 +2,26 @@
 
 導入と日常管理の要点です。チャットの使い方は[ユーザー向け操作マニュアル](user-manual.md)を参照してください。
 
-## 初期設定と起動
+## 認証方式の選択（auth.mode: local と sso）
 
-1. `minihub.sample.json`を実際に使う`minihub.json`へコピーし、`initialAdmin.password`を8文字以上・UTF-8で72バイト以下の値に変更します。実設定ファイルには管理者だけがアクセスできるようにしてください。
-2. `minihub -config minihub.json`で起動し、設定した管理者IDとパスワードでログインします。
-3. 初期管理者の作成を確認したら、実設定ファイルから`initialAdmin`ブロックを削除します。
+`minihub.json` の `"auth"` 設定で認証方式を選択できます。省略時は `"local"` です。
+
+| 項目 | `auth.mode: "local"` (通常 / 単体運用) | `auth.mode: "sso"` (`miniauth` 連携運用) |
+|---|---|---|
+| **目的** | `minihub` 単体でユーザー・認証を完結させる運用 | `miniauth` で全社ユーザー・グループを一元管理する運用 |
+| **ユーザー登録・管理** | minihub の管理画面（管理者メニュー）で登録・変更・無効化 | `miniauth` の管理画面（`/admin`）で一元管理（minihub 側の管理ボタンは非表示、miniauth へのリンクを表示） |
+| **初期管理者 (`initialAdmin`)** | **必須**（初回起動時に `initialAdmin.password` または環境変数 `MINIHUB_ADMIN_PASSWORD` が必要） | **不要**（スキップ。miniauth 側で作成された管理者アカウントが同期・SSOログイン時にそのまま minihub 管理者として反映） |
+| **パスワード認証・変更** | minihub 自身のログイン画面（`/login`）で認証。<br>ユーザー自身によるパスワード変更（鍵アイコン・API）が可能。 | minihub アクセス時に自動で `miniauth` へリダイレクトされSSO認証。<br>**minihub 側でのパスワード変更は無効化**（鍵アイコン非表示、APIは 403 拒否）。パスワード変更は `miniauth` ポータルで実施。 |
+| **名簿・所属グループ同期** | なし（minihub ローカルストレージのみ） | `miniauth` の Directory API から定期同期（例: 10分毎）および初回ログイン時の JIT 自動登録 |
+| **設定項目** | `"initialAdmin"`（初回のみ） | `"auth.miniauth"`（`url`, `clientID`, `clientSecret`, `serviceToken`, `syncInterval`） |
+
+`auth.mode: "sso"` を利用する場合は、あらかじめ `miniauth` を起動・設定し、`minihub.json` に連携先情報を記述します。詳細は [miniauth マニュアル](miniauth.md) を参照してください。
+
+## 初期設定と起動（local モードの場合）
+
+1. `minihub.sample.json` を実際に使う `minihub.json` へコピーし、`auth.mode` を `"local"` にするか省略します。`initialAdmin.password` を8文字以上・UTF-8で72バイト以下の値に変更します。実設定ファイルには管理者だけがアクセスできるようにしてください。
+2. `minihub -config minihub.json` で起動し、設定した管理者IDとパスワードでログインします。
+3. 初期管理者の作成を確認したら、実設定ファイルから `initialAdmin` ブロックを削除します。
 
 `storage.type`は`file`または`sqlite`です。省略時は`file`で、SQLiteもデータディレクトリ内に保存します。保存方式を変更する際は、設定値だけを切り替えず、停止中に[保存方式の選択・移行手順](sqlite.md)を実行してください。
 

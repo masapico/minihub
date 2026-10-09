@@ -6,12 +6,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/masapico/minihub/internal/auth"
 	"github.com/masapico/minihub/internal/authserver"
+	"github.com/masapico/minihub/internal/authstorage"
 	"github.com/masapico/minihub/internal/config"
 	"github.com/masapico/minihub/internal/directorysync"
 	"github.com/masapico/minihub/internal/domain"
@@ -19,15 +22,17 @@ import (
 	"github.com/masapico/minihub/internal/oidc"
 	"github.com/masapico/minihub/internal/service"
 	"github.com/masapico/minihub/internal/storage/filestore"
+	"github.com/masapico/minihub/web"
 )
 
 func TestSSO_EndToEndIntegration(t *testing.T) {
 	// 1. Setup miniauth Storage & Server
 	authDataDir := t.TempDir()
-	authStore, err := filestore.New(authDataDir)
+	authStore, err := authstorage.Open(authDataDir, "file")
 	if err != nil {
 		t.Fatalf("authStore init failed: %v", err)
 	}
+	defer authStore.Close()
 
 	// Register user in miniauth
 	hash, _ := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
@@ -44,7 +49,7 @@ func TestSSO_EndToEndIntegration(t *testing.T) {
 	authStore.SaveGroup(context.Background(), &domain.Group{Version: 1, ID: "dev", Name: "開発部"})
 	authStore.SaveGroup(context.Background(), &domain.Group{Version: 1, ID: "infra", Name: "インフラ部"})
 
-	authSessions := auth.NewManager(authStore, false)
+	authSessions := auth.NewManagerWithCookieConfig(authStore, false, 12*time.Hour, "/", "miniauth_session", http.SameSiteLaxMode)
 
 	authCfg := authserver.Defaults()
 	authCfg.OIDC.ServiceToken = "service-secret"
@@ -76,6 +81,7 @@ func TestSSO_EndToEndIntegration(t *testing.T) {
 	}
 
 	hubSessions := auth.NewManager(hubStore, false)
+	hubSessions.SetSameSite(http.SameSiteLaxMode)
 	hubSvc := service.New(hubStore)
 
 	miniauthClientCfg := config.MiniAuthConfig{
@@ -119,6 +125,12 @@ func TestSSO_EndToEndIntegration(t *testing.T) {
 		t.Fatal("failed to get miniauth login cookie")
 	}
 	miniauthCookie := loginRec.Result().Cookies()[0]
+	if miniauthCookie.Name != "miniauth_session" {
+		t.Fatalf("expected miniauth cookie name miniauth_session, got %s", miniauthCookie.Name)
+	}
+	if miniauthCookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("expected miniauth cookie SameSite Lax, got %v", miniauthCookie.SameSite)
+	}
 
 	// Step 4.2: User initiates SSO login from minihub: GET /api/auth/sso/login?next=/channels
 	ssoLoginReq, _ := http.NewRequest(http.MethodGet, hubTS.URL+"/api/auth/sso/login?next=/channels", nil)
@@ -162,6 +174,12 @@ func TestSSO_EndToEndIntegration(t *testing.T) {
 		t.Fatal("expected minihub session cookie, got none")
 	}
 	minihubSessionCookie := callbackRec.Result().Cookies()[0]
+	if minihubSessionCookie.Name != "minihub_session" {
+		t.Fatalf("expected minihub cookie name minihub_session, got %s", minihubSessionCookie.Name)
+	}
+	if minihubSessionCookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("expected minihub cookie SameSite Lax, got %v", minihubSessionCookie.SameSite)
+	}
 
 	// Step 4.5: User accesses minihub /api/me using the minihub session cookie
 	meReq, _ := http.NewRequest(http.MethodGet, hubTS.URL+"/api/me", nil)
@@ -173,13 +191,78 @@ func TestSSO_EndToEndIntegration(t *testing.T) {
 		t.Fatalf("/api/me returned %d: %s", meRec.Code, meRec.Body.String())
 	}
 	var meData struct {
-		ID   string      `json:"id"`
-		Name string      `json:"name"`
-		Role domain.Role `json:"role"`
+		ID           string      `json:"id"`
+		Name         string      `json:"name"`
+		Role         domain.Role `json:"role"`
+		CSRFToken    string      `json:"csrfToken"`
+		Capabilities struct {
+			SelfPasswordChange bool `json:"selfPasswordChange"`
+		} `json:"capabilities"`
 	}
 	_ = json.NewDecoder(meRec.Body).Decode(&meData)
 	if meData.ID != "u100" || meData.Name != "SSO 太郎" || meData.Role != domain.RoleAdmin {
 		t.Errorf("unexpected /api/me response: %+v", meData)
 	}
+	if meData.Capabilities.SelfPasswordChange {
+		t.Errorf("expected selfPasswordChange to be false in SSO mode")
+	}
+
+	// Step 4.6: Verify PUT /api/me/password is rejected in SSO mode
+	pwReq, _ := http.NewRequest(http.MethodPut, hubTS.URL+"/api/me/password", strings.NewReader(`{"currentPassword":"foo","newPassword":"bar"}`))
+	pwReq.Header.Set("Content-Type", "application/json")
+	pwReq.Header.Set("X-CSRF-Token", meData.CSRFToken)
+	pwReq.AddCookie(minihubSessionCookie)
+	pwRec := httptest.NewRecorder()
+	hubMux.ServeHTTP(pwRec, pwReq)
+	if pwRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for password change in SSO mode, got %d: %s", pwRec.Code, pwRec.Body.String())
+	}
 }
+
+func TestSSO_WebRedirects(t *testing.T) {
+	hubDataDir := t.TempDir()
+	hubStore, err := filestore.New(hubDataDir)
+	if err != nil {
+		t.Fatalf("hubStore init failed: %v", err)
+	}
+	hubSessions := auth.NewManager(hubStore, false)
+
+	webHandler := web.Handler(hubSessions, web.Options{
+		SSOMode: true,
+	})
+
+	// 1. Unauthenticated GET / in SSO mode should redirect directly to /api/auth/sso/login
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	webHandler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("GET / returned %d, expected 302", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/api/auth/sso/login" {
+		t.Errorf("GET / redirected to %s, expected /api/auth/sso/login", loc)
+	}
+
+	// 2. Unauthenticated GET /login in SSO mode should redirect to /api/auth/sso/login
+	reqLogin := httptest.NewRequest(http.MethodGet, "/login", nil)
+	recLogin := httptest.NewRecorder()
+	webHandler.ServeHTTP(recLogin, reqLogin)
+	if recLogin.Code != http.StatusFound {
+		t.Fatalf("GET /login returned %d, expected 302", recLogin.Code)
+	}
+	if loc := recLogin.Header().Get("Location"); loc != "/api/auth/sso/login" {
+		t.Errorf("GET /login redirected to %s, expected /api/auth/sso/login", loc)
+	}
+
+	// 3. Unauthenticated GET /schedules in SSO mode should redirect to /api/auth/sso/login?next=/schedules
+	reqSched := httptest.NewRequest(http.MethodGet, "/schedules", nil)
+	recSched := httptest.NewRecorder()
+	webHandler.ServeHTTP(recSched, reqSched)
+	if recSched.Code != http.StatusFound {
+		t.Fatalf("GET /schedules returned %d, expected 302", recSched.Code)
+	}
+	if loc := recSched.Header().Get("Location"); loc != "/api/auth/sso/login?next=%2Fschedules" {
+		t.Errorf("GET /schedules redirected to %s, expected /api/auth/sso/login?next=%%2Fschedules", loc)
+	}
+}
+
 

@@ -17,17 +17,22 @@
     "workspaceTitle": "minihub",
     "loginMessage": "ユーザーIDとパスワードを入力してください。"
   },
+  "auth": {
+    "mode": "sso",
+    "miniauth": {
+      "url": "http://127.0.0.1:8090",
+      "clientID": "minihub-chat",
+      "clientSecret": "chat-secret-abcdef",
+      "serviceToken": "minihub-sync-service-token-12345",
+      "syncInterval": "10m"
+    }
+  },
   "features": {
-    "selfPasswordChange": true,
+    "selfPasswordChange": false,
     "networkPathMode": "copy"
   },
   "notifications": { "mentionRetentionDays": 365, "osNotificationsEnabled": true },
   "retention": { "days": 0 },
   "logging": { "level": "info" },
-  "aiAccounts": [],
-  "initialAdmin": {
-    "id": "admin",
-    "name": "管理者",
-    "password": "CHANGE-ME"
-  }
+  "aiAccounts": []
 }

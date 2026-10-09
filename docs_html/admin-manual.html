@@ -10,11 +10,22 @@
 <main>
   <p class="breadcrumb"><a href="index.html">ドキュメント一覧</a></p>
 <h1 id="section-1">MiniHub 管理者向け操作マニュアル</h1>
-<nav aria-label="目次"><strong>目次</strong><ul><li><a href="#setup">初期設定と起動</a></li><li><a href="#section-3">ビルドと初回起動</a></li><li><a href="#section-5">起動オプション・表示設定</a></li><li><a href="#base-path">リバースプロキシとベースパス</a></li><li><a href="#section-6">ログインとセッション</a></li><li><a href="#https">HTTP／HTTPSの選択</a></li><li><a href="#groups">グループ管理</a></li><li><a href="#users">ユーザー管理</a></li><li><a href="#channels">チャンネル管理</a></li><li><a href="#backup">バックアップと復元</a></li><li><a href="#aiアカウント">AIアカウント</a></li></ul></nav>
+<nav aria-label="目次"><strong>目次</strong><ul><li><a href="#auth-mode">認証方式の選択（local と sso）</a></li><li><a href="#setup">初期設定と起動</a></li><li><a href="#section-3">ビルドと初回起動</a></li><li><a href="#section-5">起動オプション・表示設定</a></li><li><a href="#base-path">リバースプロキシとベースパス</a></li><li><a href="#section-6">ログインとセッション</a></li><li><a href="#https">HTTP／HTTPSの選択</a></li><li><a href="#groups">グループ管理</a></li><li><a href="#users">ユーザー管理</a></li><li><a href="#channels">チャンネル管理</a></li><li><a href="#backup">バックアップと復元</a></li><li><a href="#aiアカウント">AIアカウント</a></li></ul></nav>
 <p>導入と日常管理の要点です。チャットの使い方は<a href="user-manual.html">ユーザー向け操作マニュアル</a>を参照してください。</p>
-<h2 id="setup">初期設定と起動</h2>
+<h2 id="auth-mode">認証方式の選択（auth.mode: local と sso）</h2>
+<p><code>minihub.json</code> の <code>"auth"</code> 設定で認証方式を選択できます。省略時は <code>"local"</code> です。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">項目</th><th scope="col"><code>auth.mode: "local"</code> (通常 / 単体運用)</th><th scope="col"><code>auth.mode: "sso"</code> (<code>miniauth</code> 連携運用)</th></tr></thead><tbody>
+<tr><td><strong>目的</strong></td><td><code>minihub</code> 単体でユーザー・認証を完結させる運用</td><td><code>miniauth</code> で全社ユーザー・グループを一元管理する運用</td></tr>
+<tr><td><strong>ユーザー登録・管理</strong></td><td>minihub の管理画面（管理者メニュー）で登録・変更・無効化</td><td><code>miniauth</code> の管理画面（<code>/admin</code>）で一元管理（minihub 側の管理ボタンは非表示、miniauth へのリンクを表示）</td></tr>
+<tr><td><strong>初期管理者 (<code>initialAdmin</code>)</strong></td><td><strong>必須</strong>（初回起動時に <code>initialAdmin.password</code> または環境変数 <code>MINIHUB_ADMIN_PASSWORD</code> が必要）</td><td><strong>不要</strong>（スキップ。miniauth 側で作成された管理者アカウントが同期・SSOログイン時にそのまま minihub 管理者として反映）</td></tr>
+<tr><td><strong>パスワード認証・変更</strong></td><td>minihub 自身のログイン画面（<code>/login</code>）で認証。<br>ユーザー自身によるパスワード変更（鍵アイコン・API）が可能。</td><td>minihub アクセス時に自動で <code>miniauth</code> へリダイレクトされSSO認証。<br><strong>minihub 側でのパスワード変更は無効化</strong>（鍵アイコン非表示、APIは 403 拒否）。パスワード変更は <code>miniauth</code> ポータルで実施。</td></tr>
+<tr><td><strong>名簿・所属グループ同期</strong></td><td>なし（minihub ローカルストレージのみ）</td><td><code>miniauth</code> の Directory API から定期同期（例: 10分毎）および初回ログイン時の JIT 自動登録</td></tr>
+<tr><td><strong>設定項目</strong></td><td><code>"initialAdmin"</code>（初回のみ）</td><td><code>"auth.miniauth"</code>（<code>url</code>, <code>clientID</code>, <code>clientSecret</code>, <code>serviceToken</code>, <code>syncInterval</code>）</td></tr>
+</tbody></table></div>
+<p><code>auth.mode: "sso"</code> を利用する場合は、あらかじめ <code>miniauth</code> を起動・設定し、<code>minihub.json</code> に連携先情報を記述します。詳細は <a href="../docs/miniauth.md">miniauth マニュアル</a> を参照してください。</p>
+<h2 id="setup">初期設定と起動（local モードの場合）</h2>
 <ol>
-<li><code>minihub.sample.json</code>を実際に使う<code>minihub.json</code>へコピーし、<code>initialAdmin.password</code>を8文字以上・UTF-8で72バイト以下の値に変更します。実設定ファイルには管理者だけがアクセスできるようにしてください。</li>
+<li><code>minihub.sample.json</code>を実際に使う<code>minihub.json</code>へコピーし、<code>auth.mode</code> を <code>"local"</code> にするか省略します。<code>initialAdmin.password</code>を8文字以上・UTF-8で72バイト以下の値に変更します。実設定ファイルには管理者だけがアクセスできるようにしてください。</li>
 <li><code>minihub -config minihub.json</code>で起動し、設定した管理者IDとパスワードでログインします。</li>
 <li>初期管理者の作成を確認したら、実設定ファイルから<code>initialAdmin</code>ブロックを削除します。</li>
 </ol>

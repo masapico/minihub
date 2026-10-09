@@ -29,6 +29,7 @@
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#userTab">ユーザー一覧</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#bulkTab">ユーザー一括登録</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#groupTab">グループ管理</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#clientTab">連携アプリ管理 (SSO)</button></li>
   </ul>
 
   <div class="tab-content">
@@ -36,7 +37,7 @@
     <div class="tab-pane fade show active" id="userTab">
       <div class="d-flex justify-content-between mb-3">
         <input type="text" id="userSearch" class="form-control w-25" placeholder="検索 (IDまたは名前)">
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newUserModal"><i class="bi bi-person-plus me-1"></i>新規ユーザー作成</button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newUserModal"><svg class="bi-icon me-1" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#person-plus"></use></svg>新規ユーザー作成</button>
       </div>
       <div class="card p-0">
         <table class="table table-hover mb-0 align-middle">
@@ -73,7 +74,7 @@
     <div class="tab-pane fade" id="groupTab">
       <div class="d-flex justify-content-between mb-3">
         <div class="text-muted">組織・所属グループの定義</div>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newGroupModal"><i class="bi bi-folder-plus me-1"></i>新規グループ作成</button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newGroupModal"><svg class="bi-icon me-1" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#folder-plus"></use></svg>新規グループ作成</button>
       </div>
       <div class="card p-0">
         <table class="table table-hover mb-0 align-middle">
@@ -86,6 +87,30 @@
           </thead>
           <tbody id="groupTableBody">
             <tr><td colspan="3" class="text-center text-muted py-4">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Client Tab -->
+    <div class="tab-pane fade" id="clientTab">
+      <div class="d-flex justify-content-between mb-3">
+        <div class="text-muted">miniauth にSSO連携する外部アプリケーション (OIDCクライアント) の管理</div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newClientModal"><svg class="bi-icon me-1" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#plus-circle"></use></svg>連携アプリを追加</button>
+      </div>
+      <div class="card p-0">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Client ID</th>
+              <th>アプリ名</th>
+              <th>リダイレクトURI</th>
+              <th>起動URL</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="clientTableBody">
+            <tr><td colspan="5" class="text-center text-muted py-4">読み込み中...</td></tr>
           </tbody>
         </table>
       </div>
@@ -205,10 +230,117 @@
   </div>
 </div>
 
+<!-- New Client Modal -->
+<div class="modal fade" id="newClientModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">連携アプリ (OIDCクライアント) の追加</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">クライアントID (Client ID)</label>
+          <input type="text" id="newCid" class="form-control" required placeholder="例: minihub, grafana, wiki">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">アプリ表示名</label>
+          <input type="text" id="newCname" class="form-control" required placeholder="例: 社内チャット (minihub)">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">クライアントシークレット (Client Secret)</label>
+          <div class="input-group">
+            <input type="text" id="newCsecret" class="form-control font-monospace" required placeholder="8文字以上の安全な文字列">
+            <button class="btn btn-outline-secondary" type="button" id="genNewSecretBtn">自動生成</button>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">リダイレクトURI (カンマ区切りまたは改行)</label>
+          <textarea id="newCredirects" class="form-control font-monospace" rows="2" required placeholder="例: http://192.168.1.10:8080/api/auth/sso/callback"></textarea>
+          <div class="form-text">認証完了後のコールバック先URL</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">起動URL (任意・ポータル表示用)</label>
+          <input type="text" id="newClaunch" class="form-control" placeholder="例: http://192.168.1.10:8080/login">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">アイコン名 (任意・Bootstrap Icons)</label>
+          <input type="text" id="newCicon" class="form-control" placeholder="例: chat-dots, bar-chart, journal-bookmark">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="createClientBtn">追加</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Client Modal -->
+<div class="modal fade" id="editClientModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">連携アプリの編集</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">クライアントID (変更不可)</label>
+          <input type="text" id="editCid" class="form-control" disabled>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">アプリ表示名</label>
+          <input type="text" id="editCname" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">クライアントシークレット</label>
+          <div class="input-group">
+            <input type="text" id="editCsecret" class="form-control font-monospace" required>
+            <button class="btn btn-outline-secondary" type="button" id="genEditSecretBtn">自動生成</button>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">リダイレクトURI (カンマ区切りまたは改行)</label>
+          <textarea id="editCredirects" class="form-control font-monospace" rows="2" required></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">起動URL (任意・ポータル表示用)</label>
+          <input type="text" id="editClaunch" class="form-control">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">アイコン名 (任意・Bootstrap Icons)</label>
+          <input type="text" id="editCicon" class="form-control">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="saveClientBtn">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="{{.BasePath}}/vendor/bootstrap/bootstrap.bundle.min.js"></script>
 <script>
 let csrfToken = "";
 let allUsers = [];
+let allClients = [];
+
+function generateRandomSecret(length = 32) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+  const array = new Uint8Array(length);
+  window.crypto.getRandomValues(array);
+  return Array.from(array, byte => chars[byte % chars.length]).join("");
+}
+
+document.getElementById("genNewSecretBtn").addEventListener("click", () => {
+  document.getElementById("newCsecret").value = generateRandomSecret();
+});
+
+document.getElementById("genEditSecretBtn").addEventListener("click", () => {
+  document.getElementById("editCsecret").value = generateRandomSecret();
+});
 
 async function loadData() {
   const meRes = await fetch("{{.BasePath}}/api/me");
@@ -219,6 +351,7 @@ async function loadData() {
 
   await loadUsers();
   await loadGroups();
+  await loadClients();
 }
 
 async function loadUsers() {
@@ -286,6 +419,114 @@ async function deleteGroup(id) {
   });
   loadGroups();
 }
+
+async function loadClients() {
+  const res = await fetch("{{.BasePath}}/api/admin/clients");
+  allClients = await res.json();
+  renderClients(allClients);
+}
+
+function renderClients(clients) {
+  const tbody = document.getElementById("clientTableBody");
+  tbody.innerHTML = "";
+  if (!clients || clients.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">連携アプリが登録されていません</td></tr>';
+    return;
+  }
+  clients.forEach(c => {
+    const tr = document.createElement("tr");
+    const uris = (c.redirectURIs || []).join("<br>");
+    tr.innerHTML = `
+      <td><code>${c.id}</code></td>
+      <td><strong>${c.name}</strong></td>
+      <td class="font-monospace small">${uris}</td>
+      <td class="small">${c.launchURL ? `<a href="${c.launchURL}" target="_blank" rel="noopener noreferrer">${c.launchURL}</a>` : "-"}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary edit-client-btn me-1" data-id="${c.id}"><svg class="bi-icon" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#pencil"></use></svg> 編集</button>
+        <button class="btn btn-sm btn-outline-danger del-client-btn" data-id="${c.id}"><svg class="bi-icon" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#trash"></use></svg> 削除</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  document.querySelectorAll(".edit-client-btn").forEach(btn => {
+    btn.addEventListener("click", () => openEditClient(btn.dataset.id));
+  });
+  document.querySelectorAll(".del-client-btn").forEach(btn => {
+    btn.addEventListener("click", () => deleteClient(btn.dataset.id));
+  });
+}
+
+function openEditClient(id) {
+  const c = allClients.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById("editCid").value = c.id;
+  document.getElementById("editCname").value = c.name;
+  document.getElementById("editCsecret").value = c.secret;
+  document.getElementById("editCredirects").value = (c.redirectURIs || []).join("\n");
+  document.getElementById("editClaunch").value = c.launchURL || "";
+  document.getElementById("editCicon").value = c.icon || "";
+  new bootstrap.Modal(document.getElementById("editClientModal")).show();
+}
+
+async function deleteClient(id) {
+  if (!confirm(`連携アプリ "${id}" を削除しますか？\nこのアプリからのSSOログインができなくなります。`)) return;
+  const res = await fetch(`{{.BasePath}}/api/admin/clients?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { "X-CSRF-Token": csrfToken }
+  });
+  if (!res.ok) { alert("削除に失敗しました"); return; }
+  loadClients();
+}
+
+document.getElementById("createClientBtn").addEventListener("click", async () => {
+  const redirects = document.getElementById("newCredirects").value
+    .split(/[\r\n,]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  const res = await fetch("{{.BasePath}}/api/admin/clients", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+    body: JSON.stringify({
+      id: document.getElementById("newCid").value,
+      name: document.getElementById("newCname").value,
+      secret: document.getElementById("newCsecret").value,
+      redirectURIs: redirects,
+      launchURL: document.getElementById("newClaunch").value,
+      icon: document.getElementById("newCicon").value
+    })
+  });
+  if (!res.ok) { const d = await res.json(); alert(d.error || "作成失敗"); return; }
+  bootstrap.Modal.getInstance(document.getElementById("newClientModal")).hide();
+  document.getElementById("newCid").value = "";
+  document.getElementById("newCname").value = "";
+  document.getElementById("newCsecret").value = "";
+  document.getElementById("newCredirects").value = "";
+  document.getElementById("newClaunch").value = "";
+  document.getElementById("newCicon").value = "";
+  loadClients();
+});
+
+document.getElementById("saveClientBtn").addEventListener("click", async () => {
+  const redirects = document.getElementById("editCredirects").value
+    .split(/[\r\n,]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  const res = await fetch("{{.BasePath}}/api/admin/clients", {
+    method: "POST", // SaveClient overwrites existing client
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+    body: JSON.stringify({
+      id: document.getElementById("editCid").value,
+      name: document.getElementById("editCname").value,
+      secret: document.getElementById("editCsecret").value,
+      redirectURIs: redirects,
+      launchURL: document.getElementById("editClaunch").value,
+      icon: document.getElementById("editCicon").value
+    })
+  });
+  if (!res.ok) { const d = await res.json(); alert(d.error || "保存失敗"); return; }
+  bootstrap.Modal.getInstance(document.getElementById("editClientModal")).hide();
+  loadClients();
+});
 
 document.getElementById("createUserBtn").addEventListener("click", async () => {
   const groups = document.getElementById("newGroups").value.split(",").map(s => s.trim()).filter(Boolean);

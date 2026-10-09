@@ -636,6 +636,10 @@ func (a *API) me(w http.ResponseWriter, r *http.Request, userID string) {
 }
 
 func (a *API) changePassword(w http.ResponseWriter, r *http.Request, userID string) {
+	if a.sso != nil {
+		a.writeError(w, service.ErrForbidden)
+		return
+	}
 	var input struct {
 		CurrentPassword string `json:"currentPassword"`
 		NewPassword     string `json:"newPassword"`

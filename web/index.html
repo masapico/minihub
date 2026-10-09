@@ -5,7 +5,7 @@
   <title>{{.WorkspaceTitle}}</title><meta name="theme-color" content="#334155"><link rel="icon" href="{{.BasePath}}/favicon.svg" type="image/svg+xml"><link rel="icon" href="{{.BasePath}}/favicon.ico" sizes="any">
   <link rel="stylesheet" href="{{.BasePath}}/vendor/bootstrap/bootstrap.min.css"><link rel="stylesheet" href="{{.BasePath}}/css/theme.css"><link rel="stylesheet" href="{{.BasePath}}/css/app.css"><link rel="stylesheet" href="{{.BasePath}}/css/chat.css"><link rel="stylesheet" href="{{.BasePath}}/css/threads.css"><link rel="stylesheet" href="{{.BasePath}}/css/polls.css">
 </head>
-<body data-network-path-mode="{{.NetworkPathMode}}" data-os-notifications-enabled="{{.OSNotificationsEnabled}}">
+<body data-network-path-mode="{{.NetworkPathMode}}" data-os-notifications-enabled="{{.OSNotificationsEnabled}}" data-sso-mode="{{.SSOMode}}" data-miniauth-url="{{.MiniAuthURL}}">
 <div class="app">
   <aside class="side" id="channelNav" tabindex="-1">
     <div class="brand"><svg class="brand-icon" aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#chat-square-text"></use></svg><span id="channelNavTitle">{{.WorkspaceTitle}}</span><button class="iconbtn channel-nav-close" id="channelNavClose" type="button" aria-label="チャンネル一覧を閉じる" title="チャンネル一覧を閉じる"><svg aria-hidden="true"><use href="{{.BasePath}}/vendor/bootstrap-icons/bootstrap-icons.svg#x-lg"></use></svg></button></div>

@@ -17,7 +17,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/masapico/minihub/internal/domain"
-	"github.com/masapico/minihub/internal/storage"
 )
 
 var (
@@ -39,8 +38,18 @@ type failures struct {
 	Since time.Time
 }
 
+type Storage interface {
+	GetUser(ctx context.Context, id string) (*domain.User, error)
+	GetSession(ctx context.Context, hash string) (*domain.Session, error)
+	SaveSession(ctx context.Context, session *domain.Session) error
+	DeleteSession(ctx context.Context, hash string) error
+	DeleteExpiredSessions(ctx context.Context, now time.Time) (int, error)
+}
+
 type Manager struct {
-	storage    storage.Storage
+	storage    Storage
+	cookieName string
+	sameSite   http.SameSite
 	secure     bool
 	cookiePath string
 	ttl        time.Duration
@@ -50,18 +59,63 @@ type Manager struct {
 	dummyHash  []byte
 }
 
-func NewManager(store storage.Storage, secureCookie bool) *Manager {
+func NewManager(store Storage, secureCookie bool) *Manager {
 	return NewManagerWithTTL(store, secureCookie, 12*time.Hour)
 }
 
-func NewManagerWithTTL(store storage.Storage, secureCookie bool, ttl time.Duration) *Manager {
+func NewManagerWithTTL(store Storage, secureCookie bool, ttl time.Duration) *Manager {
 	return NewManagerWithCookiePath(store, secureCookie, ttl, "/")
 }
 
 // NewManagerWithCookiePath scopes login and logout cookies to the deployment.
-func NewManagerWithCookiePath(store storage.Storage, secureCookie bool, ttl time.Duration, cookiePath string) *Manager {
+func NewManagerWithCookiePath(store Storage, secureCookie bool, ttl time.Duration, cookiePath string) *Manager {
+	return NewManagerWithCookieConfig(store, secureCookie, ttl, cookiePath, CookieName, http.SameSiteStrictMode)
+}
+
+// NewManagerWithCookieConfig allows configuring cookie name and SameSite mode.
+func NewManagerWithCookieConfig(store Storage, secureCookie bool, ttl time.Duration, cookiePath string, cookieName string, sameSite http.SameSite) *Manager {
+	if cookieName == "" {
+		cookieName = CookieName
+	}
+	if sameSite == 0 {
+		sameSite = http.SameSiteStrictMode
+	}
 	dummyHash, _ := bcrypt.GenerateFromPassword([]byte("invalid-password-placeholder"), bcrypt.DefaultCost)
-	return &Manager{storage: store, secure: secureCookie, cookiePath: cookiePath, ttl: ttl, sessions: make(map[string]session), failures: make(map[string]failures), dummyHash: dummyHash}
+	return &Manager{
+		storage:    store,
+		cookieName: cookieName,
+		sameSite:   sameSite,
+		secure:     secureCookie,
+		cookiePath: cookiePath,
+		ttl:        ttl,
+		sessions:   make(map[string]session),
+		failures:   make(map[string]failures),
+		dummyHash:  dummyHash,
+	}
+}
+
+func (m *Manager) CookieName() string {
+	if m.cookieName != "" {
+		return m.cookieName
+	}
+	return CookieName
+}
+
+func (m *Manager) SetCookieName(name string) {
+	if name != "" {
+		m.cookieName = name
+	}
+}
+
+func (m *Manager) SameSite() http.SameSite {
+	if m.sameSite != 0 {
+		return m.sameSite
+	}
+	return http.SameSiteStrictMode
+}
+
+func (m *Manager) SetSameSite(sameSite http.SameSite) {
+	m.sameSite = sameSite
 }
 
 func (m *Manager) Login(w http.ResponseWriter, r *http.Request, userID, password string) (string, string, error) {
@@ -105,7 +159,7 @@ func (m *Manager) EstablishSession(w http.ResponseWriter, r *http.Request, user 
 	m.sessions[hash] = current
 	m.removeExpiredLocked(now)
 	m.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: token, Path: m.cookiePath, MaxAge: int(m.ttl.Seconds()), Expires: now.Add(m.ttl), HttpOnly: true, Secure: m.secure, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: m.CookieName(), Value: token, Path: m.cookiePath, MaxAge: int(m.ttl.Seconds()), Expires: now.Add(m.ttl), HttpOnly: true, Secure: m.secure, SameSite: m.SameSite()})
 	return user.ID, csrf, nil
 }
 
@@ -120,7 +174,7 @@ func (m *Manager) Authenticate(r *http.Request) (string, error) {
 // RefreshCurrentSession keeps the password-changing browser signed in while
 // every session carrying the previous authentication generation becomes invalid.
 func (m *Manager) RefreshCurrentSession(r *http.Request, generation uint64) error {
-	cookie, err := r.Cookie(CookieName)
+	cookie, err := r.Cookie(m.CookieName())
 	if err != nil {
 		return ErrInvalidCredentials
 	}
@@ -156,19 +210,19 @@ func (m *Manager) ValidateCSRF(r *http.Request) bool {
 
 func (m *Manager) Logout(w http.ResponseWriter, r *http.Request) error {
 	var deleteErr error
-	if cookie, err := r.Cookie(CookieName); err == nil {
+	if cookie, err := r.Cookie(m.CookieName()); err == nil {
 		hash := tokenHash(cookie.Value)
 		m.mu.Lock()
 		delete(m.sessions, hash)
 		deleteErr = m.storage.DeleteSession(r.Context(), hash)
 		m.mu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: m.cookiePath, MaxAge: -1, Expires: time.Unix(1, 0), HttpOnly: true, Secure: m.secure, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: m.CookieName(), Value: "", Path: m.cookiePath, MaxAge: -1, Expires: time.Unix(1, 0), HttpOnly: true, Secure: m.secure, SameSite: m.SameSite()})
 	return deleteErr
 }
 
 func (m *Manager) lookup(r *http.Request) (string, session, error) {
-	cookie, err := r.Cookie(CookieName)
+	cookie, err := r.Cookie(m.CookieName())
 	if err != nil {
 		return "", session{}, ErrInvalidCredentials
 	}

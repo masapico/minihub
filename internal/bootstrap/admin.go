@@ -8,7 +8,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/masapico/minihub/internal/domain"
-	"github.com/masapico/minihub/internal/storage"
 )
 
 const (
@@ -18,13 +17,18 @@ const (
 
 type InitialAdmin struct{ ID, Name, Password string }
 
+type UserStore interface {
+	ListUsers(ctx context.Context) ([]domain.User, error)
+	SaveUser(ctx context.Context, user *domain.User) error
+}
+
 // EnsureInitialAdmin creates the initial administrator when the user store is
 // empty. It never changes an existing installation.
-func EnsureInitialAdmin(ctx context.Context, store storage.Storage, password string) (bool, error) {
+func EnsureInitialAdmin(ctx context.Context, store UserStore, password string) (bool, error) {
 	return EnsureInitialAdminConfig(ctx, store, InitialAdmin{ID: AdminID, Name: AdminName, Password: password})
 }
 
-func EnsureInitialAdminConfig(ctx context.Context, store storage.Storage, initial InitialAdmin) (bool, error) {
+func EnsureInitialAdminConfig(ctx context.Context, store UserStore, initial InitialAdmin) (bool, error) {
 	users, err := store.ListUsers(ctx)
 	if err != nil {
 		return false, fmt.Errorf("list users: %w", err)

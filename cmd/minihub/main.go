@@ -112,21 +112,29 @@ func run() (runErr error) {
 	if cleanupErr != nil {
 		logger.Warn("session cleanup incomplete", "error", cleanupErr)
 	}
-	admin := bootstrap.InitialAdmin{ID: bootstrap.AdminID, Name: bootstrap.AdminName, Password: os.Getenv("MINIHUB_ADMIN_PASSWORD")}
-	if cfg.InitialAdmin != nil {
-		admin = bootstrap.InitialAdmin{ID: cfg.InitialAdmin.ID, Name: cfg.InitialAdmin.Name, Password: cfg.InitialAdmin.Password}
-	}
-	_ = os.Unsetenv("MINIHUB_ADMIN_PASSWORD")
-	created, err := bootstrap.EnsureInitialAdminConfig(context.Background(), store, admin)
-	if err != nil {
-		logger.Error("initialize administrator", "error", err)
-		return err
-	}
-	if created {
-		logger.Info("initial administrator created", "user", bootstrap.AdminID)
+	if cfg.Auth.Mode != "sso" {
+		admin := bootstrap.InitialAdmin{ID: bootstrap.AdminID, Name: bootstrap.AdminName, Password: os.Getenv("MINIHUB_ADMIN_PASSWORD")}
+		if cfg.InitialAdmin != nil {
+			admin = bootstrap.InitialAdmin{ID: cfg.InitialAdmin.ID, Name: cfg.InitialAdmin.Name, Password: cfg.InitialAdmin.Password}
+		}
+		_ = os.Unsetenv("MINIHUB_ADMIN_PASSWORD")
+		created, err := bootstrap.EnsureInitialAdminConfig(context.Background(), store, admin)
+		if err != nil {
+			logger.Error("initialize administrator", "error", err)
+			return err
+		}
+		if created {
+			logger.Info("initial administrator created", "user", bootstrap.AdminID)
+		}
+	} else {
+		logger.Info("sso mode active: skipping local initial administrator initialization")
 	}
 	retention := time.Duration(cfg.Notifications.MentionRetentionDays) * 24 * time.Hour
-	svc := service.NewWithOptions(store, cfg.Features.SelfPasswordChange, retention)
+	selfPasswordChange := cfg.Features.SelfPasswordChange
+	if cfg.Auth.Mode == "sso" {
+		selfPasswordChange = false
+	}
+	svc := service.NewWithOptions(store, selfPasswordChange, retention)
 	svc.SetAttachmentsDir(filepath.Join(*dataDir, "attachments"))
 	deletedAtts, attErr := svc.CleanupAttachments(time.Now())
 	logger.Info("expired attachment cleanup completed", "deleted", deletedAtts)
@@ -135,6 +143,9 @@ func run() (runErr error) {
 	}
 	ttl, _ := time.ParseDuration(cfg.Server.SessionTTL)
 	sessions := auth.NewManagerWithCookiePath(store, *secureCookie, ttl, *basePath+"/")
+	if cfg.Auth.Mode == "sso" {
+		sessions.SetSameSite(http.SameSiteLaxMode)
+	}
 	hub := realtime.New(sessions.Authenticate, svc.CanReadChannel, svc.CanPostChannel, logger)
 	hub.SetPresenceCandidates(svc.MentionCandidateIDs)
 	svc.SetMessagePublisher(hub)
